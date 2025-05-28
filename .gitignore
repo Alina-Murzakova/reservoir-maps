@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.idea/
+.ipynb_checkpoints/
+.cache/
+.venv/
+venv/
+build/
+dist/
+data_for_maps/
+*.png
+*.pkl
+*.npy
+*.json
+
