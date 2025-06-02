@@ -4,12 +4,20 @@ import logging
 import math
 
 from reservoir_maps.one_phase_model import get_current_So
-from reservoir_maps.utils import correction_injection_well_trajectory
 
 logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 def get_grid(data_volumes):
+    """
+    Generates a 2D grid of coordinates using shape of input map.
+    Args:
+        data_volumes: 2D array representing the reservoir map
+
+    Returns:
+        np.ndarray: Array of (x, y) grid coordinates.
+    """
     # Расчет сетки
     x_coords = np.arange(0, data_volumes.shape[1], 1)
     y_coords = np.arange(0, data_volumes.shape[0], 1)
@@ -20,7 +28,15 @@ def get_grid(data_volumes):
 
 def get_saturation_points(row, data_So_init, fluid_params, relative_permeability):
     """
-    Возвращает список current_saturation по каждой точке траектории скважины
+    Calculates initial and current oil saturation at each point of the well trajectory.
+    Args:
+        row (pd.Series): row of data_wells
+        data_So_init (np.ndarray): Initial oil saturation map
+        fluid_params (FluidParams): General properties of the reservoir
+        relative_permeability (RelativePermeabilityParams): Parameters of the relative permeability curve
+
+    Returns:
+        pd.Series: Two lists - initial and current saturation along trajectory.
     """
     traj_x = row['trajectory_x']
     traj_y = row['trajectory_y']
@@ -44,6 +60,16 @@ def get_saturation_points(row, data_So_init, fluid_params, relative_permeability
 
 
 def generate_well_point_vectors(data_wells, map_params, reservoir_params):
+    """
+    Expands well data to trajectory points
+    Args:
+        data_wells: (pd.DataFrame): DataFrame with well information and trajectories
+        map_params (MapParams): Parameters for accounting in maps
+        reservoir_params (reservoir_params): General properties of the reservoir
+
+    Returns:
+        Tuple of np.ndarrays with processed well parameters by trajectory points.
+    """
     # Параметры для учета АГРП
     sigma_h = None
     l_half_fracture_pixel = None
@@ -59,19 +85,9 @@ def generate_well_point_vectors(data_wells, map_params, reservoir_params):
     (x, y, r_eff, time_off, work_markers, k, h, Qo_cumsum, Winj_cumsum, So_current_wells, So_init_wells) = (
         [], [], [], [], [], [], [], [], [], [], [])
     for _, row in data_wells.iterrows():
-        if map_params.switch_fracture and row['work_marker'] == 'inj':
-            "Если учитываем АГРП - переориентируем координаты скважины по направлению трещины"
-            new_trajectory = correction_injection_well_trajectory(row['trajectory_x'], row['trajectory_y'],
-                                                                  sigma_h,
-                                                                  l_half_fracture_pixel)
-            x.extend(new_trajectory[0])
-            y.extend(new_trajectory[1])
-            len_trajectory = len(new_trajectory[0])
-        else:
-            x.extend(row['trajectory_x'])
-            y.extend(row['trajectory_y'])
-            len_trajectory = len(row['trajectory_x'])
-
+        x.extend(row['trajectory_x'])
+        y.extend(row['trajectory_y'])
+        len_trajectory = len(row['trajectory_x'])
         r_eff.extend(
             [row["r_eff"] / map_params.size_pixel] * len_trajectory)  # все в пикселях для снижения размерности
         time_off.extend([row["no_work_time"]] * len_trajectory)
@@ -96,9 +112,20 @@ def generate_well_point_vectors(data_wells, map_params, reservoir_params):
 
 
 def get_weights(distances, r_eff, k, time_off, delta):
+    """
+    Computes influence weights from wells on each cell of grid
+    Args:
+        distances (np.ndarray): Distances from each grid point to each well
+        r_eff (np.ndarray): Effective drainage radius
+        k (np.ndarray): Reservoir permeability
+        time_off (np.ndarray): Time since well was inactive
+        delta (float): Coefficient controlling decay rate of well influence
+
+    Returns:
+        np.ndarray: Normalized weights of influence.
+    """
     # Веса
     psi = np.exp(-delta * k * time_off)
     weights = r_eff * psi / (distances ** 2 + 1e-12)
     weights /= (np.sum(weights, axis=1, keepdims=True) + 1e-12)  # Нормировка веса
-    weights = weights.astype('float32')
-    return weights
+    return weights.astype('float32')

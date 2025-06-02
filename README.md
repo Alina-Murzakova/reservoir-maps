@@ -12,7 +12,7 @@
 * Oil initially in place (OIIP) map  
 * Initial recoverable oil reserves (IRR) map
 
-## Installation
+## ⚙️ Installation
 ### Dependencies
 `reservoir-maps` requires:
 * Python (>= 3.8)
@@ -27,39 +27,131 @@ To install from github:
 pip install git+https://github.com/Alina-Murzakova/reservoir_maps.git
 ```
 
-## Usage
+## 🚀 Usage
+
+### 📥 Input Parameters
+
+`dict_maps`: dict  
+A dictionary of required reservoir maps.  
+
+| Key                      | Type       | Description                | Unit |
+|--------------------------|------------|----------------------------|:----:|
+| `NNT`                    | np.ndarray | Net oil thickness map      |  m   |
+| `initial_oil_saturation` | np.ndarray | Initial oil saturation map |  –   |
+| `porosity`               | np.ndarray | Porosity map               |  –   |
+
+`dict_data_wells`: dict  
+A dictionary of wells data arrays.
+
+| Key            | Type         | Description                             |   Unit    |
+|----------------|--------------|-----------------------------------------|:---------:|
+| `well_number`  | str / int    | Well identifier                         |     —     |
+| `work_marker`  | str          | Marker 'prod' or 'inj' well             |     —     |
+| `no_work_time` | int / float  | Time since well was inactive            |  months   |
+| `Qo_cumsum`    | int / float  | Cumulative oil production               |    ton    |
+| `Winj_cumsum`  | int / float  | Cumulative water injection              |    m³     |
+| `water_cut`    | int / float  | The latest water cut                    | fraction  |
+| `r_eff`        | int / float  | Effective drainage radius               |     m     |
+| `NNT`          | int / float  | Net oil thickness                       |     m     |
+| `permeability` | int / float  | Reservoir permeability at well location |    mD     |
+| `T1_x_pix`     | int / float  | X coordinate of T1 point in pixels      |    pix    |
+| `T1_y_pix`     | int / float  | Y coordinate of T1 point in pixels      |    pix    |
+| `T3_x_pix`     | int / float  | X coordinate of T3 point in pixels      |    pix    |
+| `T3_y_pix`     | int / float  | Y coordinate of T3 point in pixels      |    pix    |
+
+`dict_map_params`: dict   
+A dictionary of input parameters that define the map configuration.
+
+| Key               | Type    | Description                       |    Unit    |
+|-------------------|---------|-----------------------------------|:----------:|
+| `size_pixel`      | int     | Size of one pixel in the map grid |     m      |
+| `switch_fracture` | boolean | Enable fracture modeling          | True/False |
+
+
+`dict_reservoir_params`: dict  
+A dictionary of general properties of the reservoir.
+
+| Key                   | Type  | Description                              | Unit |
+|-----------------------|-------|------------------------------------------|:----:|
+| `KIN`                 | float | Recovery factor [0; 1]                   |  –   |
+| `azimuth_sigma_h_min` | float | Azimuth of the minimum horizontal stress | deg  |
+| `l_half_fracture`     | float | Half-length of hydraulic fracture        |  m   |
+
+
+`dict_fluid_params`: dict   
+A dictionary of reservoir fluids (oil, water).
+
+| Key        | Type  | Description                   | Unit  |
+|------------|-------|-------------------------------|:-----:|
+| `pho_surf` | float | Surface oil density           | g/cm³ |
+| `mu_o`     | float | Oil viscosity                 |  cP   |
+| `mu_w`     | float | Water viscosity               |  cP   |
+| `Bo`       | float | Oil formation volume factor   | m³/m³ |
+| `Bw`       | float | Water formation volume factor | m³/m³ |
+
+`dict_relative_permeability`: dict   
+A dictionary of relative phase permeability.
+
+| Key   | Type  | Description                              |
+|-------|-------|------------------------------------------|
+| `Swc` | float | Connate water saturation                 |
+| `Sor` | float | Residual oil saturation                  |
+| `Fw`  | float | End-point relative permeability of water |
+| `m1`  | float | Corey exponent for water phase           |
+| `Fo`  | float | End-point relative permeability of oil   |
+| `m2`  | float | Corey exponent for oil phase             |
+
+`dict_options`: dict, optional  
+A dictionary of additional calculation options.
+
+| Key     | Type  | Description                                          | Default  |
+|---------|-------|------------------------------------------------------|:--------:|
+| `betta` | float | Power coefficient for well interference influence    |   1.5    |
+| `delta` | float | Coefficient controlling decay rate of well influence |  0.0001  |
+
+### 💡 Example
 Here’s a minimal example of how to use `reservoir_maps`:
 ```python
 from reservoir_maps import get_maps
 
 # Prepare your input dictionaries
-dict_maps = {...}
-dict_data_wells = {...}
-dict_map_params = {...}
-dict_reservoir_params = {...}
-dict_fluid_params = {...}
-dict_relative_permeability = {...}
-dict_options = {...}
+dict_maps = {"NNT": np.ones((10, 10)), "initial_oil_saturation": np.ones((10, 10)), "porosity": np.ones((10, 10))}
+dict_data_wells = {'well_number': [1, 2],
+                   'work_marker': ['prod', 'inj'],
+                   'no_work_time': [0.0, 10.0],
+                   'Qo_cumsum': [1000, 0],
+                   'Winj_cumsum': [0, 2000],
+                   'water_cut': [10, 0.0],
+                   'r_eff': [100, 120],
+                   'NNT': [5.0, 6],
+                   'permeability': [20, 15.0],
+                   'T1_x_pix': [1, 6],
+                   'T1_y_pix': [1, 6],
+                   'T3_x_pix': [5, 9],
+                   'T3_y_pix': [2, 6],
+                   }
+dict_map_params = {"size_pixel": 50, "switch_fracture": False}
+dict_reservoir_params = {"KIN": 0.25, "azimuth_sigma_h_min": 30, "l_half_fracture": 100}
+dict_fluid_params = {"pho_surf": 0.850, "mu_o": 0.75, "mu_w": 0.3, "Bo": 1.2, "Bw": 1.0}
+dict_relative_permeability = {"Sor": 0.3, "Swc": 0.2, "Fw": 0.3, "m1": 1, "Fo": 1, "m2": 1.0}
 
 # Calculate maps
-result = get_maps(
-    dict_maps,
-    dict_data_wells,
-    dict_map_params,
-    dict_reservoir_params,
-    dict_fluid_params,
-    dict_relative_permeability,
-    dict_options
-)
+result = get_maps(dict_maps,
+                  dict_data_wells,
+                  dict_map_params,
+                  dict_reservoir_params,
+                  dict_fluid_params,
+                  dict_relative_permeability,
+                  )
 
 # Access results
 result.data_So_current  # current oil saturation array
-result.data_water_cut   # water cut array
-result.data_OIIP   # oil initially in place (OIIP) array
-result.data_IRR   # initial recoverable oil reserves (IRR) array
-result.data_RRR   # residual recoverable reserves (RRR) array
+result.data_water_cut  # water cut array
+result.data_OIIP  # oil initially in place (OIIP) array
+result.data_IRR  # initial recoverable oil reserves (IRR) array
+result.data_RRR  # residual recoverable reserves (RRR) array
 ```
-For full examples, see the examples notebook (Jupyter Notebook).
+For full examples, see the examples notebook in [Jupyter Notebook](examples/reservoir_state_maps.ipynb) and [test run](examples/test.py)
 
 ## 👷 Who should use Reservoir-maps?
 **Reservoir-maps** is an open-source package for:  
@@ -69,8 +161,18 @@ For full examples, see the examples notebook (Jupyter Notebook).
 * Students and educators in petroleum engineering
 
 ## 📄 License
-This project is licensed under the  [MIT License]().
+This project is licensed under the [MIT License](https://github.com/Alina-Murzakova/reservoir-maps/blob/main/LICENSE).
 
 ## 🙋‍♀️ Authors
 * Alina Murzakova
 * Anastasia Rybakovskaya
+
+## 🧪 Tests
+Basic test cases are located in the tests/ folder. To run them:
+```bash
+pytest
+```
+Make sure you have pytest installed: pip install pytest.
+
+## 📬 Feedback & Contributions
+We welcome feedback, issues, and pull requests!

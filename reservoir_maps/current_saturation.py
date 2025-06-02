@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import logging
+import math
 
 from typing import Tuple
 from scipy.spatial.distance import cdist
@@ -8,6 +9,7 @@ from scipy.optimize import minimize_scalar
 from reservoir_maps.well_interference import get_matrix_r_ij
 from reservoir_maps.data_processing import get_grid, generate_well_point_vectors, get_weights, get_saturation_points
 from .input import (MapParams, ReservoirParams, FluidParams, RelativePermeabilityParams, Options, MapCollection)
+from .utils import update_injection_trajectory
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +35,14 @@ def calculate_current_saturation(maps: MapCollection,
     Returns:
         2D array of the current oil saturation distributed across the grid
     """
-    logger.debug("Get values of saturation in wells's points")
+    logger.debug("Accounting auto-fracs at injection wells")
+    if map_params.switch_fracture:
+        # Getting params for accounting auto-fracs at injection wells
+        sigma_h = math.radians(reservoir_params.azimuth_sigma_h_min)
+        l_half_fracture_pixel = reservoir_params.l_half_fracture / map_params.size_pixel
+        data_wells = data_wells.apply(update_injection_trajectory, args=(sigma_h, l_half_fracture_pixel), axis=1)
+
+    logger.debug("Get values of saturations for each wells trajectory point")
     data_wells[['So_init', 'So_current']] = data_wells.apply(get_saturation_points,
                                                              args=(maps.initial_oil_saturation,
                                                                    fluid_params,
@@ -59,7 +68,7 @@ def calculate_current_saturation(maps: MapCollection,
     well_coord, x, y, r_eff, time_off, work_markers, k, h, Qo_cumsum, Winj_cumsum, So_current_wells, So_init_wells = (
         generate_well_point_vectors(data_wells, map_params, reservoir_params))
     # Расстояние от всех ячеек до всех скважин
-    logger.debug("Calculating of distances from all cells to all wells")
+    logger.debug("Calculating of distances from each cell to each well")
     distances = cdist(valid_points, well_coord).astype('float32')
     logger.debug("Calculating of weights of wells's influence")
     weights = get_weights(distances, r_eff, k, time_off, options.delta)
@@ -79,7 +88,7 @@ def calculate_current_saturation(maps: MapCollection,
                                                     weights_diff_saturation,
                                                     influence_matrix, data_volumes, Qo_sum_V, relative_permeability)
 
-    return data_So_current.reshape(maps.initial_oil_saturation.shape)
+    return data_So_current
 
 
 def interpolate_current_saturation(gamma: float,
@@ -186,8 +195,8 @@ def optimize_gamma(data_So_init: np.ndarray,
     optimal_gamma = res.x
     logger.info(f"Optimal value of gamma: {optimal_gamma}")
     data_So_current = interpolate_current_saturation(optimal_gamma, flat_So_init, mask, weights_diff_saturation,
-                                                     influence_matrix, relative_permeability)
+                                                     influence_matrix, relative_permeability).reshape(data_So_init.shape)
     logger.info(
-        f"Loss: {(np.sum((data_So_init - data_So_current.reshape(data_So_init.shape)) * data_volumes) - Qo_sum_V) ** 2}")
+        f"Loss: {(np.sum((data_So_init - data_So_current) * data_volumes) - Qo_sum_V) ** 2}")
 
     return optimal_gamma, data_So_current

@@ -7,7 +7,7 @@ name = "reservoir-maps"
 version = "0.1.0"
 authors = [
     { name = "Alina Murzakova", email = "alinagab1993@gmail.com" },
-    { name = "Anastasia Rybakovskaya" }
+    { name = "Anastasia Rybakovskaya", email = "na.rybakovskaya@gmail.com" }
 ]
 description = "The module is for calculating reservoir state maps: current saturation, water cut, residual oil reserves."
 readme = "README.md"
@@ -36,3 +36,6 @@ dependencies = [
 
 [project.urls]
 Repository = "https://github.com/Alina-Murzakova/reservoir_maps.git"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

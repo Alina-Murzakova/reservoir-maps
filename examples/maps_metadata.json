@@ -1,0 +1,14 @@
+[
+  {
+    "data_file": "map_NNT.npy",
+    "type_map": "NNT"
+  },
+  {
+    "data_file": "map_initial_oil_saturation.npy",
+    "type_map": "initial_oil_saturation"
+  },
+  {
+    "data_file": "map_porosity.npy",
+    "type_map": "porosity"
+  }
+]

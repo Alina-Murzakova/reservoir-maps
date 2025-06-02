@@ -2,20 +2,21 @@ import numpy as np
 import math
 
 """
------Учет радиусов влияния в распределении нефтенасыщенности-----
-Также как и в случае матрицы расстояний distances, нам необходимо получить для каждой точки скважины массив значений r_jl, 
-которые зависят от направлений векторов alpha_ij из точки скважины к каждой ячейке поля. 
+-----Accounting for Influence Radii in Oil Saturation-----
+It's necessary to get an array of values r_jl for each well points, 
+which depend on the directions of alpha_ij vectors from well point to each cell of grid.
 
-Будем действовать по следующему алгоритму:
-1. Сначала рассчитаем матрицу направлений alpha_ij для каждой ячейки поля
-2. Для точки рассчитаем корреляционную таблицу r_jl(alpha_ij) через функцию calculate_r_jl_values
-3. Матрицу alpha_ij прогоним через функцию get_r_jl - и получим матрицу радиусов
-4. Добавим получившийся массив в общий и используем в функции расчета нефтенас-ти + обновим эффективные радиусы скважин
-5. !NB Если встречается точка нагнетательной скважины, то для нее используется базовая матрица r_jl 
-    из эффективных радиусов точки (или 1?)"""
+Algorithm:
+1. Calculate direction matrix alpha_ij for each cell of grid.
+2. Compute correlation table r_jl(alpha_ij) using calculate_r_jl_values for each point.
+3. Let pass matrix alpha_ij through get_r_jl to get radius matrix.
+4. Add the resulting array to the general matrix, use for oil saturation calculations and updating effective radius of wells.
+5. !NB For injectors points, use a base r_jl matrix from effective radii of point (or 1?)
+"""
 
 
 def get_matrix_r_ij(valid_points, well_coord, x, y, work_markers, r_eff, h, Qo_cumsum, Winj_cumsum, size_pixel):
+    """Calculate local influence radius matrix r_ij for each point."""
     # Расчет локальных матриц взаимодействия для точек
     matrix_r_ij = np.empty((valid_points[:, 1].shape[0], len(x)), dtype=np.float32)
     index = 0
@@ -39,7 +40,6 @@ def get_matrix_r_ij(valid_points, well_coord, x, y, work_markers, r_eff, h, Qo_c
             matrix_r_ij[:, index] = array_r_jl.ravel()
             index += 1
         else:
-            print(0)
             matrix_r_ij[:, index] = np.full(valid_points[:, 1].shape[0], r_eff_n / size_pixel)
             index += 1
     return matrix_r_ij
@@ -47,17 +47,18 @@ def get_matrix_r_ij(valid_points, well_coord, x, y, work_markers, r_eff, h, Qo_c
 
 def calc_interference_matrix(point_coord, work_marker_point, grid_point_wells, array_h, array_Winj, array_Qo,
                              array_work_marker, max_distance=1000):
-    """Расчет коэффициентов участия и влияния"""
+    """Compute interference coefficients between wells."""
+    # Расчет коэффициентов участия и влияния
     array_distance = np.linalg.norm(grid_point_wells - point_coord, axis=1)
     mask_nearest_points = (array_distance <= max_distance) & (array_distance > 0)
     mask_marker = array_work_marker != work_marker_point
     mask_general = mask_nearest_points & mask_marker
     if work_marker_point == 'prod':
-        "Расчет коэффициентов влияния для добывающих скважин"
+        # Расчет коэффициентов влияния для добывающих скважин
         lambda_ij = array_h[mask_general] * array_Winj[mask_general] / array_distance[mask_general]
         lambda_ij = lambda_ij / lambda_ij.sum()
     else:
-        "Расчет коэффициентов участия для нагнетательных скважин"
+        # Расчет коэффициентов участия для нагнетательных скважин
         lambda_ij = array_h[mask_general] * array_Qo[mask_general] / array_distance[mask_general]
         lambda_ij = 1 - lambda_ij / lambda_ij.sum()
     return lambda_ij, mask_general
@@ -65,15 +66,13 @@ def calc_interference_matrix(point_coord, work_marker_point, grid_point_wells, a
 
 def calculate_alpha(point_center, point_cell):
     """
-    Векторизованный расчет угла (в радианах) от `point_center` до точек `point_cell`.
-    Все входные данные должны быть массивами NumPy.
-    :param point_center: tuple[float, float]
-        Центральная точка (x, y).
-    :param point_cell: tuple[np.ndarray, np.ndarray]
-        Две матрицы координат: (x_coords, y_coords).
-    :return:
-    np.ndarray
-        Матрица углов [0, 2π) той же формы, что и входные массивы.
+    Vectorized angle calculation (radians) from 'point_center' to 'point_cell'.
+    Args:
+        point_center (tuple[float, float]): Center point of the well (x, y)
+        point_cell (tuple[np.ndarray, np.ndarray]): Coordinates of grid cells (x_array, y_array).
+
+    Returns:
+        np.ndarray: Matrix of angles in range [0, 2π).
     """
     x1, y1 = point_center
     x2, y2 = point_cell  # Распаковываем массивы координат
@@ -86,7 +85,7 @@ def calculate_alpha(point_center, point_cell):
 
 def calculate_r_jl_values(point_well, r_eff, interferense_values, centers_x, centers_y,
                           delta_theta=np.pi / 10, num_points=365):
-    """Векторизованная версия функции."""
+    """Compute r_jl(alpha) table — influence radii depending on angle."""
     # 1. Расчет array_alpha - направлений к центрам нагнетательных
     array_alpha = calculate_alpha(point_well, (centers_x, centers_y))
 
@@ -114,7 +113,7 @@ def calculate_r_jl_values(point_well, r_eff, interferense_values, centers_x, cen
 
 
 def calculate_eta(R_x, lambdas, delta_theta):
-    """Вычисляет η = Rₓ * √(2π / (sin(Δθ) * Σ(λₖ * λₖ₊₁)))."""
+    """Compute η = Rₓ * √(2π / (sin(Δθ) * Σ(λₖ * λₖ₊₁)))."""
     S = calculate_S_polygon(lambdas, delta_theta)
     eta = R_x * math.sqrt(math.pi / (S + 1e-12))
     return eta
@@ -132,13 +131,15 @@ def calculate_S_polygon(lambdas, delta_theta):
 
 def calculate_r_jl(L_k_list, delta_theta, alpha):
     """
-    Вычисляет r_jl(alpha) с учётом кольцевой структуры лучей (0..2π).
-    Векторизованная версия
-    :param L_k_list: (np.ndarray) Массив длин лучей L_k.
-    :param delta_theta: (float) Угловой шаг между лучами (в радианах).
-    :param alpha: (np.ndarray или float) Угол(ы) (в радианах), может быть массивом.
-    :return:
-    np.ndarray: Значения r_jl для каждого угла в alpha.
+    Compute r_jl(alpha) with account of the circular structure of rays (0..2π).
+    Vectorized version.
+    Args:
+        L_k_list (np.ndarray): Array of ray lengths L_k
+        delta_theta (float): Angle step between ray [radians]
+        alpha (np.ndarray or float): Angle(s) [radians]
+
+    Returns:
+        np.ndarray: r_jl values for each angle on alpha
     """
     # Преобразуем вход в numpy array, если это скаляр
     alpha = np.asarray(alpha)
@@ -172,6 +173,7 @@ def calculate_r_jl(L_k_list, delta_theta, alpha):
 
 
 def get_r_jl(target_angles, angles, r_jl_values):
+    """Get matrix of r_jl for one point."""
     # Находим индексы ближайших углов (бинарный поиск)
     idx = np.searchsorted(angles, target_angles, side="left")
 

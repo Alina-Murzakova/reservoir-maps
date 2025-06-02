@@ -54,7 +54,7 @@ def get_f_w(mu_w, mu_o, Bo, Bw, Sw, Fw, m1, Fo, m2, Swc, Sor):
 
 def get_k_corey(F, m, Swc, Sor, Sw, type):
     """
-    Computes relative phase permeability for oil/water as functions of water saturation (Sw) based on the Corey model
+    Computes relative phase permeability for oil/water as functions of water saturation (Sw) based on the Corey model.
     """
     if Sw == 1 and type == "water":
         return 1

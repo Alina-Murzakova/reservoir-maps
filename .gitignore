@@ -10,7 +10,7 @@ build/
 dist/
 data_for_maps/
 *.png
-*.pkl
-*.npy
-*.json
+#*.pkl
+#*.npy
+#*.json
 
