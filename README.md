@@ -1,16 +1,24 @@
 # Reservoir-maps
 
-**Reservoir-maps** is a Python package for calculating 2D reservoir state maps used in oil field development analysis.  
+**Reservoir-maps** is a Python package for calculating 2D reservoir state maps used in oil field development analysis.
 
 ### ✨ Main Features
 * Current oil saturation map
 * Water cut map
 * Residual recoverable oil reserves (RRR) map
 
-
 ### ➕ Additional Features
 * Oil initially in place (OIIP) map  
 * Initial recoverable oil reserves (IRR) map
+
+### 🔢 Workflow Stages  
+1. Input Preparation
+2. Saturation Calculation at Well Points (One-Phase Model)
+3. Well Data Expansion to Trajectory Points
+4. Influence Weights Calculation
+5. Well Interference Calculation
+6. Optimization & Interpolation: Material Balance Enforcement
+7. Result Map Generation
 
 ## ⚙️ Installation
 ### Dependencies
@@ -24,14 +32,15 @@
 ### User installation
 To install from github:
 ```bash
-pip install git+https://github.com/Alina-Murzakova/reservoir_maps.git
+pip install git+https://github.com/Alina-Murzakova/reservoir-maps.git
 ```
 
 ## 🚀 Usage
 
 ### 📥 Input Parameters
 
-`dict_maps`: dict  
+* `dict_maps`: dict
+  
 A dictionary of required reservoir maps.  
 
 | Key                      | Type       | Description                | Unit |
@@ -40,7 +49,8 @@ A dictionary of required reservoir maps.
 | `initial_oil_saturation` | np.ndarray | Initial oil saturation map |  –   |
 | `porosity`               | np.ndarray | Porosity map               |  –   |
 
-`dict_data_wells`: dict  
+* `dict_data_wells`: dict 
+
 A dictionary of wells data arrays.
 
 | Key            | Type         | Description                             |   Unit    |
@@ -59,7 +69,8 @@ A dictionary of wells data arrays.
 | `T3_x_pix`     | int / float  | X coordinate of T3 point in pixels      |    pix    |
 | `T3_y_pix`     | int / float  | Y coordinate of T3 point in pixels      |    pix    |
 
-`dict_map_params`: dict   
+* `dict_map_params`: dict   
+
 A dictionary of input parameters that define the map configuration.
 
 | Key               | Type    | Description                       |    Unit    |
@@ -68,7 +79,8 @@ A dictionary of input parameters that define the map configuration.
 | `switch_fracture` | boolean | Enable fracture modeling          | True/False |
 
 
-`dict_reservoir_params`: dict  
+* `dict_reservoir_params`: dict  
+
 A dictionary of general properties of the reservoir.
 
 | Key                   | Type  | Description                              | Unit |
@@ -78,7 +90,8 @@ A dictionary of general properties of the reservoir.
 | `l_half_fracture`     | float | Half-length of hydraulic fracture        |  m   |
 
 
-`dict_fluid_params`: dict   
+* `dict_fluid_params`: dict   
+
 A dictionary of reservoir fluids (oil, water).
 
 | Key        | Type  | Description                   | Unit  |
@@ -89,7 +102,8 @@ A dictionary of reservoir fluids (oil, water).
 | `Bo`       | float | Oil formation volume factor   | m³/m³ |
 | `Bw`       | float | Water formation volume factor | m³/m³ |
 
-`dict_relative_permeability`: dict   
+* `dict_relative_permeability`: dict
+
 A dictionary of relative phase permeability.
 
 | Key   | Type  | Description                              |
@@ -101,17 +115,19 @@ A dictionary of relative phase permeability.
 | `Fo`  | float | End-point relative permeability of oil   |
 | `m2`  | float | Corey exponent for oil phase             |
 
-`dict_options`: dict, optional  
+* `dict_options`: dict, optional  
+
 A dictionary of additional calculation options.
 
-| Key     | Type  | Description                                          | Default  |
-|---------|-------|------------------------------------------------------|:--------:|
-| `betta` | float | Power coefficient for well interference influence    |   1.5    |
-| `delta` | float | Coefficient controlling decay rate of well influence |  0.0001  |
+| Key     | Type  | Description                          | Default  |
+|---------|-------|--------------------------------------|:--------:|
+| `betta` | float | Power coefficient for well influence |   1.5    |
+| `delta` | float | Decay rate of well influence         |  0.0001  |
 
 ### 💡 Example
 Here’s a minimal example of how to use `reservoir_maps`:
 ```python
+import numpy as np
 from reservoir_maps import get_maps
 
 # Prepare your input dictionaries
@@ -145,13 +161,16 @@ result = get_maps(dict_maps,
                   )
 
 # Access results
-result.data_So_current  # current oil saturation array
-result.data_water_cut  # water cut array
-result.data_OIIP  # oil initially in place (OIIP) array
-result.data_IRR  # initial recoverable oil reserves (IRR) array
-result.data_RRR  # residual recoverable reserves (RRR) array
+map_So_current = result.data_So_current  # current oil saturation array
+map_water_cut = result.data_water_cut  # water cut array
+map_OIIP = result.data_OIIP  # oil initially in place (OIIP) array
+map_IRR= result.data_IRR  # initial recoverable oil reserves (IRR) array
+map_RRR = result.data_RRR  # residual recoverable reserves (RRR) array
 ```
-For full examples, see the examples notebook in [Jupyter Notebook](examples/reservoir_state_maps.ipynb) and [test run](examples/test.py)
+
+👉 For full examples, check: 
+* [Jupyter Notebook](examples/reservoir_state_maps.ipynb) 
+* [Python run example](examples/run_example.py)
 
 ## 👷 Who should use Reservoir-maps?
 **Reservoir-maps** is an open-source package for:  
@@ -164,15 +183,15 @@ For full examples, see the examples notebook in [Jupyter Notebook](examples/rese
 This project is licensed under the [MIT License](https://github.com/Alina-Murzakova/reservoir-maps/blob/main/LICENSE).
 
 ## 🙋‍♀️ Authors
-* Alina Murzakova
-* Anastasia Rybakovskaya
+* [Alina Murzakova](https://github.com/Alina-Murzakova)
+* [Anastasia Rybakovskaya](https://github.com/ryba-kovskaya)
 
 ## 🧪 Tests
-Basic test cases are located in the tests/ folder. To run them:
+Basic test cases are located in the [tests](tests). To run them:
 ```bash
 pytest
 ```
 Make sure you have pytest installed: pip install pytest.
 
 ## 📬 Feedback & Contributions
-We welcome feedback, issues, and pull requests!
+We welcome feedback, issues and pull requests!

@@ -3,20 +3,36 @@ import math
 
 """
 -----Accounting for Influence Radii in Oil Saturation-----
-It's necessary to get an array of values r_jl for each well points, 
-which depend on the directions of alpha_ij vectors from well point to each cell of grid.
+Module for determining the shape of an asymmetric drainage/injection zone of wells,
+where each direction of the vectors alpha_ij is characterized by different radii r_jl.
+The calculation of the distorted zone is based on well interference and contribution coefficients.
 
 Algorithm:
 1. Calculate direction matrix alpha_ij for each cell of grid.
 2. Compute correlation table r_jl(alpha_ij) using calculate_r_jl_values for each point.
 3. Let pass matrix alpha_ij through get_r_jl to get radius matrix.
 4. Add the resulting array to the general matrix, use for oil saturation calculations and updating effective radius of wells.
-5. !NB For injectors points, use a base r_jl matrix from effective radii of point (or 1?)
 """
 
 
 def get_matrix_r_ij(valid_points, well_coord, x, y, work_markers, r_eff, h, Qo_cumsum, Winj_cumsum, size_pixel):
-    """Calculate local influence radius matrix r_ij for each point."""
+    """
+    Calculate local influence radius matrix r_ij for each point of well.
+    Args:
+        valid_points: Boolean mask array indicating valid cells with oil.
+        well_coord (2-D numpy array): coordinates of wells [[x, y]...] (pixel coords)
+        x (numpy array): x - coordinates (pixel coords)
+        y (numpy array): y - coordinates (pixel coords)
+        work_markers (numpy array): work_markers of wells [(str): 'prod' or 'inj']
+        r_eff (numpy array): effective radius of wells [m]
+        h (numpy array): work_markers oil-saturated thickness of wells
+        Qo_cumsum (numpy array): cumulative oil productions of wells [t]
+        Winj_cumsum(numpy array): cumulative fluid injection of wells [m³]
+        size_pixel (int): Size of one pixel (cell) in the map grid [m]
+
+    Returns:
+        2D np.array [grid.shape, len(wells)]: matrix r_ij for each point of well.
+    """
     # Расчет локальных матриц взаимодействия для точек
     matrix_r_ij = np.empty((valid_points[:, 1].shape[0], len(x)), dtype=np.float32)
     index = 0
@@ -24,11 +40,11 @@ def get_matrix_r_ij(valid_points, well_coord, x, y, work_markers, r_eff, h, Qo_c
         x_point, y_point, work_marker_point, r_eff_n = (x[index_point], y[index_point],
                                                         work_markers[index_point], r_eff[index_point])
         if work_marker_point == 'prod' or work_marker_point == 'inj':
-            # Строка из матрицы влияния с созависимыми нагнетательными
+            # Строка из матрицы влияния с созависимыми скважинами
             interference_array, mask_general = calc_interference_matrix(np.array([x_point, y_point]), work_marker_point,
                                                                         well_coord, h, Winj_cumsum, Qo_cumsum,
                                                                         work_markers)
-            # Центры данных нагнетательных скважин
+            # Центры данных зависимых скважин
             centers_x, centers_y = x[mask_general], y[mask_general]
             # Считаем массив направлений alpha_ij
             array_alpha_ij = calculate_alpha((x_point, y_point), (valid_points[:, 0], valid_points[:, 1]))
@@ -47,7 +63,22 @@ def get_matrix_r_ij(valid_points, well_coord, x, y, work_markers, r_eff, h, Qo_c
 
 def calc_interference_matrix(point_coord, work_marker_point, grid_point_wells, array_h, array_Winj, array_Qo,
                              array_work_marker, max_distance=1000):
-    """Compute interference coefficients between wells."""
+    """
+    Compute interference coefficients between wells.
+    Args:
+        point_coord (numpy array) [x, y]: coordinates of well (pixel coords)
+        work_marker_point (str) 'prod' or 'inj': work_marker of well
+        grid_point_wells (2-D numpy array): coordinates of wells [[x, y]...] (pixel coords)
+        array_h (numpy array): work_markers oil-saturated thickness of wells
+        array_Winj (numpy array): cumulative fluid injection of wells [m³]
+        array_Qo (numpy array): cumulative oil productions of wells [t]
+        array_work_marker (numpy array): work_markers of wells [(str): 'prod' or 'inj']
+        max_distance (int)=1000: maximum distance for determining influencing wells [m]
+
+    Returns:
+        List of two np.array: [lambda_ij - interference coefficients between wells,
+                                mask_general - boolean mask array indicating influencing wells].
+    """
     # Расчет коэффициентов участия и влияния
     array_distance = np.linalg.norm(grid_point_wells - point_coord, axis=1)
     mask_nearest_points = (array_distance <= max_distance) & (array_distance > 0)
@@ -85,7 +116,20 @@ def calculate_alpha(point_center, point_cell):
 
 def calculate_r_jl_values(point_well, r_eff, interferense_values, centers_x, centers_y,
                           delta_theta=np.pi / 10, num_points=365):
-    """Compute r_jl(alpha) table — influence radii depending on angle."""
+    """
+    Compute r_jl(alpha) table for point of one well — influence radii depending on angle.
+    Args:
+        point_well (numpy array) [x, y]: coordinates of well (pixel coords)
+        r_eff (int): effective radius of well [m]
+        interferense_values (numpy array): interference coefficients between wells
+        centers_x (numpy array):  x - coordinates of influencing wells (pixel coords)
+        centers_y (numpy array):  y - coordinates of influencing wells (pixel coords)
+        delta_theta (int) = np.pi / 10: Angle for calculating the projections of alpha_ij onto the rays lambda_k [rad]
+        num_points (int) = 365: Calculation of angles for constructing a correlation table of interaction radii
+                                based on partitioning the [0, 2π) space into num_points intervals
+    Returns:
+        List of two np.array: [alpha_angles, r_jl_values] - correlation table of interaction radii r_jl(alpha).
+    """
     # 1. Расчет array_alpha - направлений к центрам нагнетательных
     array_alpha = calculate_alpha(point_well, (centers_x, centers_y))
 
@@ -106,20 +150,39 @@ def calculate_r_jl_values(point_well, r_eff, interferense_values, centers_x, cen
     eta = calculate_eta(r_eff, lambda_k, delta_theta)
     L_k_list = lambda_k * eta
 
-    # 4. Расчет r_jl_values - таблицы радиусов взамодействия от угла
+    # 4. Расчет r_jl_values - таблицы радиусов взаимодействия от угла
     alpha_angles = np.linspace(0, 2 * np.pi, num_points, endpoint=True)
     r_jl_values = calculate_r_jl(L_k_list, delta_theta, alpha_angles)
     return alpha_angles, r_jl_values
 
 
 def calculate_eta(R_x, lambdas, delta_theta):
-    """Compute η = Rₓ * √(2π / (sin(Δθ) * Σ(λₖ * λₖ₊₁)))."""
+    """
+    Calculation of a scalable coefficient η = Rₓ * √(2π / (sin(Δθ) * Σ(λₖ * λₖ₊₁))).
+    for vectors lambda_k to achieve the target polygon area size
+    Args:
+        R_x (int): effective radius of well [m]
+        lambdas (np.array): rays lambda_k
+        delta_theta (int) = np.pi / 10: Angle for calculating the projections of alpha_ij onto the rays lambda_k [rad]
+
+    Returns:
+        eta (int): scalable coefficient
+    """
     S = calculate_S_polygon(lambdas, delta_theta)
     eta = R_x * math.sqrt(math.pi / (S + 1e-12))
     return eta
 
 
 def calculate_S_polygon(lambdas, delta_theta):
+    """
+    Calculating the area of a polygon consisting of rays lambda_k.
+    Args:
+        lambdas (np.array): rays lambda_k
+        delta_theta (int) = np.pi / 10: Angle for calculating the projections of alpha_ij onto the rays lambda_k [rad]
+
+    Returns:
+        S (int): area of a polygon
+    """
     # Создаем пары соседних элементов: (λ₁, λ₂), (λ₂, λ₃), ..., (λ_M, λ_{M+1})
     pairs = zip(lambdas[:-1], lambdas[1:])
     # Вычисляем сумму произведений пар
@@ -141,6 +204,7 @@ def calculate_r_jl(L_k_list, delta_theta, alpha):
     Returns:
         np.ndarray: r_jl values for each angle on alpha
     """
+    # Преобразуем вход в numpy array, если это скаляр
     # Преобразуем вход в numpy array, если это скаляр
     alpha = np.asarray(alpha)
     scalar_input = False
@@ -173,7 +237,16 @@ def calculate_r_jl(L_k_list, delta_theta, alpha):
 
 
 def get_r_jl(target_angles, angles, r_jl_values):
-    """Get matrix of r_jl for one point."""
+    """
+    Get r_jl for target angles based on correlation table r_jl(alpha).
+    Args:
+        target_angles(np.ndarray): Angle(s) [radians]
+        angles (np.ndarray): angles of correlation table r_jl(alpha)
+        r_jl_values (np.ndarray): r_jl of correlation table r_jl(alpha)
+
+    Returns:
+        np.ndarray: r_jl values for each angle on target_angles
+    """
     # Находим индексы ближайших углов (бинарный поиск)
     idx = np.searchsorted(angles, target_angles, side="left")
 
