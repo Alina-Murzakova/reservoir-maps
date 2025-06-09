@@ -14,11 +14,11 @@ constants = {'map_params': {'size_pixel': 50,  # Size of one pixel (cell) in the
                               'Bw': 1,  # Water formation volume factor [m³/m³]
                               },
 
-             'relative_permeability': {'Swc': 0.2,  # Connate water saturation (dimensionless, between 0 and 1)
-                                       'Sor': 0.3,  # Residual oil saturation (dimensionless, between 0 and 1)
-                                       'Fw': 0.3,  # End-point relative permeability of water
-                                       'm1': 1,  # Corey exponent for water phase
-                                       'Fo': 1,  # End-point relative permeability of oil
-                                       'm2': 1,  # Corey exponent for oil phase
+             'relative_permeability': {'Swc': 0.5,  # Connate water saturation (dimensionless, between 0 and 1)
+                                       'Sor': 0.314,  # Residual oil saturation (dimensionless, between 0 and 1)
+                                       'Fw': 0.1,  # End-point relative permeability of water
+                                       'm1': 2,  # Corey exponent for water phase
+                                       'Fo': 0.05,  # End-point relative permeability of oil
+                                       'm2': 3,  # Corey exponent for oil phase
                                        },
              }

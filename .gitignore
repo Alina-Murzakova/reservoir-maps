@@ -13,4 +13,8 @@ data_for_maps/
 #*.pkl
 #*.npy
 #*.json
+/examples/Untitled.ipynb
+/examples/reservoir_state_maps_water_cut.ipynb
+/examples/data_wells_original.pkl
+Исходные для анализа/
 

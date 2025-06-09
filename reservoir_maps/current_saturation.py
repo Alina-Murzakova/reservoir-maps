@@ -48,8 +48,8 @@ def calculate_current_saturation(maps: MapCollection,
                                                                    fluid_params,
                                                                    relative_permeability,
                                                                    ), axis=1)
-    maps.initial_oil_saturation = np.where(maps.initial_oil_saturation < relative_permeability.Sor,
-                                           0, maps.initial_oil_saturation)
+    maps.initial_oil_saturation = np.where(np.isclose(maps.initial_oil_saturation, 0, atol=1e-1), 0,
+                                           maps.initial_oil_saturation)
     # Расчет порового объема
     logger.debug("Calculating reservoir pore volume <data_volumes>")
     data_volumes = map_params.size_pixel ** 2 * maps.NNT * maps.porosity
@@ -65,8 +65,12 @@ def calculate_current_saturation(maps: MapCollection,
     valid_points = grid_points[mask]
 
     logger.debug("Generating vectors of wells's points")
-    well_coord, x, y, r_eff, time_off, work_markers, k, h, Qo_cumsum, Winj_cumsum, So_current_wells, So_init_wells = (
-        generate_well_point_vectors(data_wells, map_params, reservoir_params))
+    (well_coord, x, y, r_eff, time_off, work_markers, k, h, Qo_cumsum, Winj_cumsum, So_current_wells, So_init_wells,
+     well_number) = generate_well_point_vectors(data_wells, map_params, reservoir_params)
+
+    # Проверка текущей насыщенности в скважинах относительной начальной (проблемы с ОФП, So_init или с water_cut)
+    check_error_So(So_init_wells, So_current_wells, well_number)
+
     # Расстояние от всех ячеек до всех скважин
     logger.debug("Calculating of distances from each cell to each well")
     distances = cdist(valid_points, well_coord).astype('float32')
@@ -184,8 +188,6 @@ def optimize_gamma(data_So_init: np.ndarray,
             float: Optimal gamma value found by the optimizer.
             np.ndarray: Current oil saturation 2D array/grid.
     """
-    # """Optimizes the gamma parameter to minimize the oil production loss function."""
-
     res = minimize_scalar(lambda gamma: intermediate_loss(
         gamma, data_So_init, So_min, flat_So_init, mask, weights_diff_saturation, influence_matrix,
         data_volumes, Qo_sum_V, relative_permeability),
@@ -193,10 +195,34 @@ def optimize_gamma(data_So_init: np.ndarray,
     if not res.success:
         logger.warning(f"Gamma optimization did not converge: {res.message}")
     optimal_gamma = res.x
-    logger.info(f"Optimal value of gamma: {optimal_gamma}")
+    logger.info(f"Optimal value of gamma: {optimal_gamma:.6f}")
     data_So_current = interpolate_current_saturation(optimal_gamma, flat_So_init, mask, weights_diff_saturation,
-                                                     influence_matrix, relative_permeability).reshape(data_So_init.shape)
-    logger.info(
+                                                     influence_matrix, relative_permeability).reshape(
+        data_So_init.shape)
+    logger.debug(
         f"Loss: {(np.sum((data_So_init - data_So_current) * data_volumes) - Qo_sum_V) ** 2}")
 
     return optimal_gamma, data_So_current
+
+
+def check_error_So(So_init_wells, So_current_wells, well_number):
+    """
+    Errors of current S_oil because of wrong relative phase permeability, initial oil saturation or water cut of wells
+    """
+    relative_tolerance = (So_current_wells - So_init_wells) / So_init_wells
+    absolute_tolerance = (So_current_wells - So_init_wells)
+    mask_So_error = (So_current_wells > So_init_wells)
+
+    # Statistics
+    count_error_points = np.sum(mask_So_error)
+    logger.info(f"Total number of well points where current S_oil > initial S_oil: {count_error_points}")
+    if count_error_points > 0:
+        mean_relative_error = np.mean(relative_tolerance[mask_So_error])
+        mean_absolute_error = np.mean(absolute_tolerance[mask_So_error])
+        wells_wrong_So_wells = len(np.unique(well_number[mask_So_error]))
+        all_wells = len(np.unique(well_number))
+        logger.info(f"Share of wells with at least one point where current S_oil > initial S_oil: "
+                    f"{wells_wrong_So_wells / all_wells:.1%}")
+        logger.info(f"Mean relative error of S_oil: {mean_relative_error:.1%}")
+        logger.info(f"Mean absolute error of S_oil: {mean_absolute_error:.1}")
+    return

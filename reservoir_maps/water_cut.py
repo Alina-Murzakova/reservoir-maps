@@ -18,9 +18,9 @@ def calculate_water_cut(maps: MapCollection,
         2D array of the current water cut (map)
     """
     Sw = 1.0 - data_So_current
-    Swc = 1.0 - maps.initial_oil_saturation
     vectorized_get_f_w = np.vectorize(get_f_w)
     f_w_array = vectorized_get_f_w(fluid_params.mu_w, fluid_params.mu_o, fluid_params.Bo, fluid_params.Bw,
                                    Sw, relative_permeability.Fw, relative_permeability.m1, relative_permeability.Fo,
-                                   relative_permeability.m2, Swc, relative_permeability.Sor)
+                                   relative_permeability.m2, relative_permeability.Swc, relative_permeability.Sor)
+    f_w_array = np.where(maps.initial_oil_saturation == 0, np.nan, f_w_array)
     return f_w_array

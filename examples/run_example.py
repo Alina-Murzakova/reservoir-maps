@@ -40,7 +40,6 @@ relative_permeability = constants['relative_permeability']
 # Result
 res = get_maps(dict_maps, dict_data_wells, map_parameters, reservoir_params, fluid_params, relative_permeability)
 
-
 maps = {
     "Current oil saturation": res.data_So_current,
     "Water cut": res.data_water_cut,

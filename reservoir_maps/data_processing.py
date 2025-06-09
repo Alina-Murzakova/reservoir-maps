@@ -82,8 +82,8 @@ def generate_well_point_vectors(data_wells, map_params, reservoir_params):
         # Есть несколько вариантов расчета - через закачку и длину
         l_half_fracture_pixel = reservoir_params.l_half_fracture / map_params.size_pixel
     # Списки необходимых параметров
-    (x, y, r_eff, time_off, work_markers, k, h, Qo_cumsum, Winj_cumsum, So_current_wells, So_init_wells) = (
-        [], [], [], [], [], [], [], [], [], [], [])
+    (x, y, r_eff, time_off, work_markers, k, h, Qo_cumsum, Winj_cumsum, So_current_wells, So_init_wells, well_number)\
+        = ([], [], [], [], [], [], [], [], [], [], [], [])
     for _, row in data_wells.iterrows():
         x.extend(row['trajectory_x'])
         y.extend(row['trajectory_y'])
@@ -100,6 +100,7 @@ def generate_well_point_vectors(data_wells, map_params, reservoir_params):
         Winj_cumsum.extend([Winj_point] * len_trajectory)
         So_current_wells.extend(row["So_current"])
         So_init_wells.extend(row["So_init"])
+        well_number.extend([row["well_number"]] * len_trajectory)
 
     x, y = np.array(x), np.array(y)
     well_coord = np.column_stack((x, y))
@@ -107,8 +108,10 @@ def generate_well_point_vectors(data_wells, map_params, reservoir_params):
                                        np.array(So_init_wells).astype('float32'))
     r_eff, time_off, work_markers = np.array(r_eff).astype('float32'), np.array(time_off), np.array(work_markers)
     k, h, Qo_cumsum, Winj_cumsum, = np.array(k), np.array(h), np.array(Qo_cumsum), np.array(Winj_cumsum)
+    well_number = np.array(well_number)
 
-    return well_coord, x, y, r_eff, time_off, work_markers, k, h, Qo_cumsum, Winj_cumsum, So_current_wells, So_init_wells
+    return (well_coord, x, y, r_eff, time_off, work_markers, k, h, Qo_cumsum, Winj_cumsum, So_current_wells,
+            So_init_wells, well_number)
 
 
 def get_weights(distances, r_eff, k, time_off, delta):

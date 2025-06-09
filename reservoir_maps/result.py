@@ -1,5 +1,6 @@
 import numpy as np
 import logging
+import warnings
 from dataclasses import dataclass
 from typing import Optional
 from .input import (MapParams, ReservoirParams, FluidParams, RelativePermeabilityParams, Options, MapCollection,
@@ -80,15 +81,20 @@ def get_maps(dict_maps: dict,
                                                    relative_permeability, options)
     logger.info("Calculating current water cut <data_water_cut>")
     data_water_cut = calculate_water_cut(maps, data_So_current, fluid_params, relative_permeability)
-    logger.info("Calculating oil initially in place <data_OIIP>")
+    logger.debug("Calculating oil initially in place <data_OIIP>")
     data_OIIP, sum_OIIP = calculate_oil_initially_in_place(maps, map_params, fluid_params)
-    logger.info("Calculating initial recoverable reserves <data_IRR>")
+    logger.debug("Calculating initial recoverable reserves <data_IRR>")
     data_IRR, sum_IRR = calculate_initial_recoverable_reserves(data_OIIP, map_params, reservoir_params)
-    logger.info("Calculating residual recoverable reserves <data_RRR>")
+    logger.debug("Calculating residual recoverable reserves <data_RRR>")
     data_RRR, sum_RRR = calculate_residual_recoverable_reserves(maps, data_So_current, data_OIIP, map_params,
                                                                 reservoir_params, fluid_params)
-    logger.info(
-        f"Oil production difference: {(((sum_IRR - sum_RRR) - data_wells.Qo_cumsum.sum()) / data_wells.Qo_cumsum.sum() * 100):.3f}%")
+    relative_error_reserves = (((sum_IRR - sum_RRR) - data_wells.Qo_cumsum.sum()) / data_wells.Qo_cumsum.sum() * 100)
+    logger.info(f"Relative error of reserves and production: {relative_error_reserves:.3f}%")
+    if abs(relative_error_reserves) > 1.0:
+        warnings.warn("Relative error of reserves and production exceeds tolerable error (1%), check: \n"
+                      "- relative phase permeability \n"
+                      "- current water cut of wells \n"
+                      "- map of initial oil saturation", UserWarning)
 
     return ResultMaps(
         data_So_current,

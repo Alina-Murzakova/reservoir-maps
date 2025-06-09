@@ -10,8 +10,6 @@ def get_current_So(row, fluid_params, relative_permeability):
                                 relative_permeability.m1, relative_permeability.Fo, relative_permeability.m2)
     # Выделение необходимых параметров флюидов
     mu_w, mu_o, Bw, Bo = fluid_params.mu_w, fluid_params.mu_o, fluid_params.Bw, fluid_params.Bo
-    # Минимальная водонасыщенность согласно карте
-    Swc = 1 - row['So_init']
     f_w = row['water_cut']
 
     if row.work_marker == "prod":
@@ -56,10 +54,14 @@ def get_k_corey(F, m, Swc, Sor, Sw, type):
     """
     Computes relative phase permeability for oil/water as functions of water saturation (Sw) based on the Corey model.
     """
-    if Sw == 1 and type == "water":
+    if Sw > (1 - Sor) and type == "water":
         return 1
-    elif Sw == 1 and type == "oil":
+    elif Sw > (1 - Sor) and type == "oil":
         return 0
+    elif Sw <= Swc and type == "water":
+        return 0
+    elif Sw <= Swc and type == "oil":
+        return 1
     else:
         try:
             Sd = (Sw - Swc) / (1 - Sor - Swc)  # Приведенная водонасыщенность пласта
