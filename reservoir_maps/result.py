@@ -91,10 +91,11 @@ def get_maps(dict_maps: dict,
     relative_error_reserves = (((sum_IRR - sum_RRR) - data_wells.Qo_cumsum.sum()) / data_wells.Qo_cumsum.sum() * 100)
     logger.info(f"Relative error of reserves and production: {relative_error_reserves:.3f}%")
     if abs(relative_error_reserves) > 1.0:
+        warnings.simplefilter("always", UserWarning)
         warnings.warn("Relative error of reserves and production exceeds tolerable error (1%), check: \n"
                       "- relative phase permeability \n"
                       "- current water cut of wells \n"
-                      "- map of initial oil saturation", UserWarning)
+                      "- map of initial oil saturation", UserWarning, stacklevel=2)
 
     return ResultMaps(
         data_So_current,
