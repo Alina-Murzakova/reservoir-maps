@@ -80,7 +80,7 @@ def get_maps(dict_maps: dict,
     data_So_current = calculate_current_saturation(maps, data_wells, map_params, reservoir_params, fluid_params,
                                                    relative_permeability, options)
     logger.info("Calculating current water cut <data_water_cut>")
-    data_water_cut = calculate_water_cut(maps, data_So_current, fluid_params, relative_permeability)
+    data_water_cut = calculate_water_cut(data_So_current, fluid_params, relative_permeability)
     logger.debug("Calculating oil initially in place <data_OIIP>")
     data_OIIP, sum_OIIP = calculate_oil_initially_in_place(maps, map_params, fluid_params)
     logger.debug("Calculating initial recoverable reserves <data_IRR>")
@@ -96,6 +96,11 @@ def get_maps(dict_maps: dict,
                       "- relative phase permeability \n"
                       "- current water cut of wells \n"
                       "- map of initial oil saturation", UserWarning, stacklevel=2)
+    data_So_current = np.where(maps.initial_oil_saturation == 0, map_params.no_data_value, data_So_current)
+    data_water_cut = np.where(maps.initial_oil_saturation == 0, map_params.no_data_value, data_water_cut)
+    data_OIIP = np.where(maps.initial_oil_saturation == 0, map_params.no_data_value, data_OIIP)
+    data_IRR = np.where(maps.initial_oil_saturation == 0, map_params.no_data_value, data_IRR)
+    data_RRR = np.where(maps.initial_oil_saturation == 0, map_params.no_data_value, data_RRR)
 
     return ResultMaps(
         data_So_current,

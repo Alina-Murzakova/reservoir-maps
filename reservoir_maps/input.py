@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import logging
+import os
 
 from dataclasses import dataclass, fields, MISSING
 from typing import Optional, Type, TypeVar, Any
@@ -160,9 +161,11 @@ class MapParams:
     Attributes:
         size_pixel (int): Size of one pixel (cell) in the map grid [m]
         switch_fracture (bool): Enable fracture modeling [True/False]
+        no_data_value (Optional[float]): Nodata value to ignore in maps (default: 1.70141E+0038)
     """
     size_pixel: int
     switch_fracture: bool = False
+    no_data_value: Optional[float] = 1.70141E+0038
 
     def __post_init__(self):
         validate_numbers(self)
@@ -238,11 +241,17 @@ class Options:
     Additional calculation options
 
     Attributes:
-        betta (float): Power coefficient for well interference influence (default: 1.5)
+        betta (float): Power coefficient for well interference influence (default: 2.0)
         delta (float): Coefficient controlling decay rate of well influence dependent on inactive time and permeability (default: 0.0001)
+        max_distance (float): Maximum distance for the nearest surrounding (influencing) wells [m] (default: 1000)
+        max_memory_gb (float):  Maximum allowed memory usage in gigabytes [GB] (default: 8.0)
+        batch_size (int): Number of grid cells to process per batch (default: 50_000)
     """
-    betta: float = 1.5
+    betta: float = 2.0
     delta: float = 0.0001
+    max_distance: float = 1000
+    max_memory_gb: float = 8.0
+    batch_size: int = 50_000
 
     def __post_init__(self):
         validate_numbers(self)
@@ -260,6 +269,16 @@ def validate_numbers(obj: Any) -> None:
         if name == 'switch_fracture':
             if not isinstance(value, bool):
                 raise TypeError(f"'{name}' must be True or False (type bool)")
+            continue
+
+        if name == 'no_data_value':
+            if not isinstance(value, float):
+                raise TypeError(f"'{name}' must be float")
+            continue
+
+        if name == 'batch_size':
+            if not isinstance(value, int) or value <= 0:
+                raise ValueError(f"'{name}' must be a positive integer")
             continue
 
         # Check for numeric type

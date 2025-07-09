@@ -28,6 +28,7 @@
 * SciPy (~=1.14.0)
 * Pandas (~=2.2.3)
 * Scikit-image (~=0.25.2)
+* Numba (~=0.61.2)
 
 ### User installation
 To install from github:
@@ -73,10 +74,11 @@ A dictionary of wells data arrays.
 
 A dictionary of input parameters that define the map configuration.
 
-| Key               | Type    | Description                       |    Unit    |
-|-------------------|---------|-----------------------------------|:----------:|
-| `size_pixel`      | int     | Size of one pixel in the map grid |     m      |
-| `switch_fracture` | boolean | Enable fracture modeling          | True/False |
+| Key               | Type    | Description                       |    Unit    |    Default    |
+|-------------------|---------|-----------------------------------|:----------:|:-------------:|
+| `size_pixel`      | int     | Size of one pixel in the map grid |     m      |       -       |
+| `switch_fracture` | boolean | Enable fracture modeling          | True/False |       -       |
+| `no_data_value`   | float   | Nodata value to ignore in maps    |     -      | 1.70141E+0038 |
 
 
 * `dict_reservoir_params`: dict  
@@ -119,10 +121,13 @@ A dictionary of relative phase permeability.
 
 A dictionary of additional calculation options.
 
-| Key     | Type  | Description                          | Default  |
-|---------|-------|--------------------------------------|:--------:|
-| `betta` | float | Power coefficient for well influence |   1.5    |
-| `delta` | float | Decay rate of well influence         |  0.0001  |
+| Key             | Type  | Description                                        | Default |
+|-----------------|-------|----------------------------------------------------|:-------:|
+| `betta`         | float | Power coefficient for well influence               |   2.0   |
+| `delta`         | float | Decay rate of well influence                       | 0.0001  |
+| `max_distance`  | float | Maximum distance for the nearest surrounding wells |  1000   |
+| `max_memory_gb` | float | Maximum allowed memory usage in gigabytes          |   8.0   |
+| `batch_size`    | int   | Number of grid cells to process per batch          | 50_000  |
 
 ### 💡 Example
 Here’s a minimal example of how to use `reservoir_maps`:

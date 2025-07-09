@@ -12,6 +12,7 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
+
 # Loading dataframe with well data
 with open(f"data_wells.pkl", 'rb') as f:
     data_wells = pickle.load(f)
@@ -19,6 +20,7 @@ with open(f"data_wells.pkl", 'rb') as f:
 # Loading metadata
 with open("maps_metadata.json", "r", encoding="utf-8") as f:
     maps_metadata = json.load(f)
+
 
 keys_data_wells = list(data_wells.columns)
 # Preparing a dictionary with well data
@@ -49,6 +51,7 @@ maps = {
 }
 
 for name, data in maps.items():
+    data = np.where(data == 1.70141E+0038, 0.0, data)
     plt.figure()
     plt.imshow(data, origin="upper")
     plt.colorbar()

@@ -2,7 +2,12 @@ import numpy as np
 import pandas as pd
 import logging
 import math
+import psutil
+import os
+import tempfile
 
+from scipy.spatial.distance import cdist
+from numba import njit, prange
 from reservoir_maps.one_phase_model import get_current_So
 
 logger = logging.getLogger(__name__)
@@ -36,7 +41,7 @@ def get_saturation_points(row, data_So_init, fluid_params, relative_permeability
         relative_permeability (RelativePermeabilityParams): Parameters of the relative permeability curve
 
     Returns:
-        pd.Series: Two lists - initial and current saturation along trajectory.
+        pd.Series: Three lists - initial and current saturation along trajectory and mean initial saturation for well.
     """
     traj_x = row['trajectory_x']
     traj_y = row['trajectory_y']
@@ -56,7 +61,7 @@ def get_saturation_points(row, data_So_init, fluid_params, relative_permeability
         So_current_wells.append(So_current_point)
         So_init_wells.append(So_init_point)
 
-    return pd.Series([So_init_wells, So_current_wells])
+    return pd.Series([So_init_wells, So_current_wells, np.mean(So_init_wells)])
 
 
 def generate_well_point_vectors(data_wells, map_params, reservoir_params):
@@ -132,3 +137,133 @@ def get_weights(distances, r_eff, k, time_off, delta):
     weights = r_eff * psi / (distances ** 2 + 1e-12)
     weights /= (np.sum(weights, axis=1, keepdims=True) + 1e-12)  # Нормировка веса
     return weights.astype('float32')
+
+
+def check_memory(matrix_r_ij, max_memory_gb):
+    """
+    Check whether sufficient memory is available to perform the full computation in a single step
+    without splitting into batches.
+    Args:
+        matrix_r_ij: local influence radius matrix r_ij for each point of well to getting shape
+        max_memory_gb: maximum allowed memory usage in gigabytes [GB]
+
+    Returns:
+        Flag (bool) - Indicates whether sufficient memory is available to perform the full computation in a single step
+        without splitting into batches.
+    """
+    estimated_size_bytes = matrix_r_ij.shape[0] * matrix_r_ij.shape[1] * 4 * 2 * 0.8  # float32 * 2 массива
+    estimated_size_gb = estimated_size_bytes / (1024.0 ** 3)
+    available_ram_gb = psutil.virtual_memory().available / (1024.0 ** 3)
+    logger.info(f"Estimated memory required: ~{estimated_size_gb:.2f} GB, \n"
+                f"Available RAM: ~{available_ram_gb:.2f} GB (limit: {max_memory_gb} GB)")
+    if estimated_size_gb < min(available_ram_gb, max_memory_gb):
+        return True
+    else:
+        logger.info(f"Not enough memory available for fast computation.\n"
+                    f"Batch processing will be used.")
+        return False
+
+
+def batch_generator(valid_points, matrix_r_ij, diff_So, well_coord, r_eff, k, time_off,
+                    delta, betta, batch_size):
+    """
+    This generator function yields intermediate matrices used for weights_diff_saturation, influence_matrix
+    Args:
+        valid_points: Array of (x, y) pixel coordinates of cells with oil (N, 2).
+        matrix_r_ij: Local influence radius matrix r_ij for each point of well (N, M).
+        diff_So: Array of changes of oil saturation per well (M,).
+        well_coord: Array of (x, y) pixel coordinates of wells (M, 2).
+        r_eff: Array of effective radii for each well (M,).
+        k:  Array of permeability values for each well (M,).
+        time_off: Array of downtime (inactive time) for each well (M,).
+        delta: Coefficient controlling decay rate of well influence dependent on inactive time and permeability
+        betta: Power coefficient for well interference influence
+        batch_size: Number of grid cells to process per batch
+
+    Returns:
+        Tuple of:
+            - weights_diff_saturation (ndarray): Matrix of saturation difference influence weights (batch_size, M).
+            - influence_matrix (ndarray): Matrix of exponential influence factors (batch_size, M).
+
+    """
+    # Influence weights
+    # Accounting for downtime and permeability
+    psi = np.exp(-delta * k * time_off)
+
+    for i in range(0, valid_points.shape[0], batch_size):
+        sl = slice(i, i + batch_size)
+        vp_batch = valid_points[sl]
+
+        # Calculating of distances from each cell to each well
+        logger.debug("Calculating of distances from each cell to each well")
+        distances = cdist(vp_batch, well_coord).astype('float32')
+        logger.debug("Calculating of weights of wells's influence")
+        weights = (r_eff * psi) / (distances ** 2 + 1e-12)
+        weights /= (np.sum(weights, axis=1, keepdims=True) + 1e-12)  # weight normalization
+        weights = weights.astype('float32')
+
+        # Calculation of coefficients for accounting in exponential decay
+        weights_diff_saturation = (weights * diff_So)
+        influence_matrix = (((distances + matrix_r_ij[sl]) / r_eff) ** betta)
+
+        yield weights_diff_saturation, influence_matrix
+
+
+def save_batches_to_disk(batch_generator, save_dir):
+    """
+    Saves generated batches of data (`weights_diff_saturation` and `influence_matrix`) to disk as `.npy` files.
+    Args:
+        batch_generator: Generator.
+        save_dir: Directory path where the batches will be saved.
+
+    """
+    os.makedirs("batches", exist_ok=True)
+    for i, (weights_diff_saturation, influence_matrix) in enumerate(batch_generator):
+        np.save(os.path.join(save_dir, f"weights_diff_saturation_{i}.npy"), weights_diff_saturation)
+        np.save(os.path.join(save_dir, f"influence_matrix_{i}.npy"), influence_matrix)
+
+
+def batch_generator_from_disk(save_dir):
+    """
+    Loads saved batches of data from disk and yields them one by one.
+    Args:
+        save_dir: Directory path where batch files are stored.
+
+    Returns:
+        Yields:
+        Tuple of:
+            - weights_diff_saturation (ndarray):  Matrix of saturation difference influence weights.
+            - influence_matrix (ndarray): Matrix of exponential influence factors.
+
+    """
+    i = 0
+    while True:
+        weights_diff_saturation = os.path.join(save_dir, f"weights_diff_saturation_{i}.npy")
+        influence_matrix = os.path.join(save_dir, f"influence_matrix_{i}.npy")
+        if not os.path.exists(weights_diff_saturation):
+            break
+        yield np.load(weights_diff_saturation), np.load(influence_matrix)
+        i += 1
+
+
+@njit(parallel=True)
+def compute_exp_sum(gamma, weights_diff_saturation, influence_matrix):
+    """
+    Computes the exponential weighted sum  of saturation differences  for each cell using  Numba for parallel execution.
+    Args:
+        gamma: Optimization parameter affecting saturation decrease.
+        weights_diff_saturation: Matrix of saturation difference influence weights.
+        influence_matrix: Matrix of exponential influence factors.
+
+    Returns:
+        result (ndarray): Computed weighted sum for each cell.
+
+    """
+    n = weights_diff_saturation.shape[0]
+    result = np.zeros(n, dtype=np.float32)
+    for i in prange(n):
+        s = 0.0
+        for j in range(weights_diff_saturation.shape[1]):
+            s += weights_diff_saturation[i, j] * np.exp(-gamma * influence_matrix[i, j])
+        result[i] = s
+    return result

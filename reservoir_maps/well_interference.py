@@ -15,7 +15,8 @@ Algorithm:
 """
 
 
-def get_matrix_r_ij(valid_points, well_coord, x, y, work_markers, r_eff, h, Qo_cumsum, Winj_cumsum, size_pixel):
+def get_matrix_r_ij(valid_points, well_coord, x, y, work_markers, r_eff, h, Qo_cumsum, Winj_cumsum, size_pixel,
+                    max_distance):
     """
     Calculate local influence radius matrix r_ij for each point of well.
     Args:
@@ -28,8 +29,8 @@ def get_matrix_r_ij(valid_points, well_coord, x, y, work_markers, r_eff, h, Qo_c
         h (numpy array): work_markers oil-saturated thickness of wells
         Qo_cumsum (numpy array): cumulative oil productions of wells [t]
         Winj_cumsum(numpy array): cumulative fluid injection of wells [m³]
-        size_pixel (int): Size of one pixel (cell) in the map grid [m]
-
+        size_pixel (int): size of one pixel (cell) in the map grid [m]
+        max_distance (float): maximum distance for the nearest surrounding (influencing) wells [m]
     Returns:
         2D np.array [grid.shape, len(wells)]: matrix r_ij for each point of well.
     """
@@ -43,7 +44,7 @@ def get_matrix_r_ij(valid_points, well_coord, x, y, work_markers, r_eff, h, Qo_c
             # Строка из матрицы влияния с созависимыми скважинами
             interference_array, mask_general = calc_interference_matrix(np.array([x_point, y_point]), work_marker_point,
                                                                         well_coord, h, Winj_cumsum, Qo_cumsum,
-                                                                        work_markers)
+                                                                        work_markers, max_distance / size_pixel)
             # Центры данных зависимых скважин
             centers_x, centers_y = x[mask_general], y[mask_general]
             # Считаем массив направлений alpha_ij
@@ -62,7 +63,7 @@ def get_matrix_r_ij(valid_points, well_coord, x, y, work_markers, r_eff, h, Qo_c
 
 
 def calc_interference_matrix(point_coord, work_marker_point, grid_point_wells, array_h, array_Winj, array_Qo,
-                             array_work_marker, max_distance=1000):
+                             array_work_marker, max_distance):
     """
     Compute interference coefficients between wells.
     Args:
@@ -73,7 +74,7 @@ def calc_interference_matrix(point_coord, work_marker_point, grid_point_wells, a
         array_Winj (numpy array): cumulative fluid injection of wells [m³]
         array_Qo (numpy array): cumulative oil productions of wells [t]
         array_work_marker (numpy array): work_markers of wells [(str): 'prod' or 'inj']
-        max_distance (int)=1000: maximum distance for determining influencing wells [m]
+        max_distance: maximum distance for determining influencing wells [pix]
 
     Returns:
         List of two np.array: [lambda_ij - interference coefficients between wells,
@@ -204,7 +205,6 @@ def calculate_r_jl(L_k_list, delta_theta, alpha):
     Returns:
         np.ndarray: r_jl values for each angle on alpha
     """
-    # Преобразуем вход в numpy array, если это скаляр
     # Преобразуем вход в numpy array, если это скаляр
     alpha = np.asarray(alpha)
     scalar_input = False
