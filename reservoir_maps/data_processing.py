@@ -217,7 +217,6 @@ def save_batches_to_disk(batch_generator, save_dir):
         save_dir: Directory path where the batches will be saved.
 
     """
-    os.makedirs("batches", exist_ok=True)
     for i, (weights_diff_saturation, influence_matrix) in enumerate(batch_generator):
         np.save(os.path.join(save_dir, f"weights_diff_saturation_{i}.npy"), weights_diff_saturation)
         np.save(os.path.join(save_dir, f"influence_matrix_{i}.npy"), influence_matrix)
