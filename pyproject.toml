@@ -32,7 +32,8 @@ dependencies = [
     "scipy~=1.14.0",
     "pandas~=2.2.3",
     "scikit-image~=0.25.2",
-    "numba~=0.61.2"
+    "numba~=0.61.2",
+    "psutil~=7.0.0"
 ]
 
 [project.urls]

@@ -29,6 +29,7 @@
 * Pandas (~=2.2.3)
 * Scikit-image (~=0.25.2)
 * Numba (~=0.61.2)
+* Psutil (~=7.0.0)
 
 ### User installation
 To install from github:

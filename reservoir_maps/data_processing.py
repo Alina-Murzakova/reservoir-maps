@@ -4,7 +4,6 @@ import logging
 import math
 import psutil
 import os
-import tempfile
 
 from scipy.spatial.distance import cdist
 from numba import njit, prange
