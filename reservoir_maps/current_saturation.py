@@ -53,7 +53,7 @@ def calculate_current_saturation(maps: MapCollection,
                                                                                    ), axis=1)
     # Filtration of wells without values on map_initial_oil_saturation
     data_wells = data_wells[data_wells['So_init_mean'] != 0.].reset_index(drop=True)
-    maps.initial_oil_saturation = np.where(np.isclose(maps.initial_oil_saturation, 0, atol=1e-1), 0,
+    maps.initial_oil_saturation = np.where(np.isclose(maps.initial_oil_saturation, 0, atol=1e-2), 0,
                                            maps.initial_oil_saturation)
     # Граница по извлекаемости с учетом КИН
     So_min = maps.initial_oil_saturation * (1 - reservoir_params.KIN)
