@@ -40,7 +40,7 @@ def get_saturation_points(row, data_So_init, fluid_params, relative_permeability
         relative_permeability (RelativePermeabilityParams): Parameters of the relative permeability curve
 
     Returns:
-        pd.Series: Three lists - initial and current saturation along trajectory and mean initial saturation for well.
+        pd.Series: Two lists - initial and current saturation along trajectory.
     """
     traj_x = row['trajectory_x']
     traj_y = row['trajectory_y']
@@ -50,6 +50,8 @@ def get_saturation_points(row, data_So_init, fluid_params, relative_permeability
     for x, y in zip(traj_x, traj_y):
         # Получаем нефтенасыщенность из карты
         So_init_point = data_So_init[y, x].astype('float32')
+        if So_init_point == 0:
+            return None
 
         row_copy = row.copy()
         row_copy['So_init'] = So_init_point
@@ -60,7 +62,7 @@ def get_saturation_points(row, data_So_init, fluid_params, relative_permeability
         So_current_wells.append(So_current_point)
         So_init_wells.append(So_init_point)
 
-    return pd.Series([So_init_wells, So_current_wells, np.mean(So_init_wells)])
+    return pd.Series([So_init_wells, So_current_wells])
 
 
 def generate_well_point_vectors(data_wells, map_params, reservoir_params):

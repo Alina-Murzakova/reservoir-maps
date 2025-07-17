@@ -46,13 +46,13 @@ def calculate_current_saturation(maps: MapCollection,
         data_wells = data_wells.apply(update_injection_trajectory, args=(sigma_h, l_half_fracture_pixel), axis=1)
 
     logger.debug("Get values of saturations for each wells trajectory point")
-    data_wells[['So_init', 'So_current', 'So_init_mean']] = data_wells.apply(get_saturation_points,
-                                                                             args=(maps.initial_oil_saturation,
-                                                                                   fluid_params,
-                                                                                   relative_permeability,
-                                                                                   ), axis=1)
+    data_wells[['So_init', 'So_current']] = data_wells.apply(get_saturation_points,
+                                                             args=(maps.initial_oil_saturation,
+                                                                   fluid_params,
+                                                                   relative_permeability,
+                                                                   ), axis=1)
     # Filtration of wells without values on map_initial_oil_saturation
-    data_wells = data_wells[data_wells['So_init_mean'] != 0.].reset_index(drop=True)
+    data_wells = data_wells[data_wells['So_init'].notna()].reset_index(drop=True)
     maps.initial_oil_saturation = np.where(np.isclose(maps.initial_oil_saturation, 0, atol=1e-2), 0,
                                            maps.initial_oil_saturation)
     # Граница по извлекаемости с учетом КИН
