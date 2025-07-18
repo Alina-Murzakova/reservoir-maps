@@ -14,9 +14,11 @@ data_for_maps/
 #*.npy
 #*.json
 /examples/reservoir_state_maps ВНГП.ipynb
+/examples/reservoir_state_maps Новогоднее.ipynb
 /examples/reservoir_state_maps_water_cut.ipynb
 /examples/data_wells_original.pkl
 /examples/ВНГП/
+examples/Новогоднее/
 Исходные для анализа/
 Книги тек насыщ/
 
