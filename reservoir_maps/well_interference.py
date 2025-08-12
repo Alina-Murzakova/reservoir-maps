@@ -45,16 +45,19 @@ def get_matrix_r_ij(valid_points, well_coord, x, y, work_markers, r_eff, h, Qo_c
             interference_array, mask_general = calc_interference_matrix(np.array([x_point, y_point]), work_marker_point,
                                                                         well_coord, h, Winj_cumsum, Qo_cumsum,
                                                                         work_markers, max_distance / size_pixel)
-            # Центры данных зависимых скважин
-            centers_x, centers_y = x[mask_general], y[mask_general]
-            # Считаем массив направлений alpha_ij
-            array_alpha_ij = calculate_alpha((x_point, y_point), (valid_points[:, 0], valid_points[:, 1]))
-            # Рассчитаем корреляционную таблицу r_jl(alpha_ij) через функцию calculate_r_jl_values
-            angles, r_jl_values_prod_well = calculate_r_jl_values((x_point, y_point), r_eff_n, interference_array,
-                                                                  centers_x, centers_y)
-            # array_alpha_ij прогоним через функцию get_r_jl - и получим матрицу радиусов для одной точки
-            array_r_jl = get_r_jl(array_alpha_ij, angles, r_jl_values_prod_well)
-            matrix_r_ij[:, index] = array_r_jl.ravel()
+            if not np.any(mask_general):
+                matrix_r_ij[:, index] = np.full(valid_points[:, 1].shape[0], r_eff_n / size_pixel)
+            else:
+                # Центры данных зависимых скважин
+                centers_x, centers_y = x[mask_general], y[mask_general]
+                # Считаем массив направлений alpha_ij
+                array_alpha_ij = calculate_alpha((x_point, y_point), (valid_points[:, 0], valid_points[:, 1]))
+                # Рассчитаем корреляционную таблицу r_jl(alpha_ij) через функцию calculate_r_jl_values
+                angles, r_jl_values_prod_well = calculate_r_jl_values((x_point, y_point), r_eff_n, interference_array,
+                                                                      centers_x, centers_y)
+                # array_alpha_ij прогоним через функцию get_r_jl - и получим матрицу радиусов для одной точки
+                array_r_jl = get_r_jl(array_alpha_ij, angles, r_jl_values_prod_well)
+                matrix_r_ij[:, index] = array_r_jl.ravel()
             index += 1
         else:
             matrix_r_ij[:, index] = np.full(valid_points[:, 1].shape[0], r_eff_n / size_pixel)
