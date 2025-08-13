@@ -219,8 +219,28 @@ def save_batches_to_disk(batch_generator, save_dir):
 
     """
     for i, (weights_diff_saturation, influence_matrix) in enumerate(batch_generator):
+        # Вычисляем размер каждого массива в байтах
+        weights_size = weights_diff_saturation.nbytes
+        influence_size = influence_matrix.nbytes
+
+        logger.info(f"Saving batch {i}:")
+        logger.info(f"weights_diff_saturation size: {format_size(weights_size)}")
+        logger.info(f"influence_matrix size: {format_size(influence_size)}")
+        logger.info(f"Total size of batches: {format_size(weights_size + influence_size)}")
+
         np.save(os.path.join(save_dir, f"weights_diff_saturation_{i}.npy"), weights_diff_saturation)
         np.save(os.path.join(save_dir, f"influence_matrix_{i}.npy"), influence_matrix)
+
+
+def format_size(size_bytes):
+    """
+    Converts size in bytes to readable format (KB, MB, GB).
+    """
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if size_bytes < 1024.0:
+            return f"{size_bytes:.2f} {unit}"
+        size_bytes /= 1024.0
+    return f"{size_bytes:.2f} TB"
 
 
 def batch_generator_from_disk(save_dir):
