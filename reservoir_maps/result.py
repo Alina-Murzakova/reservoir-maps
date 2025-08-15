@@ -76,9 +76,20 @@ def get_maps(dict_maps: dict,
     logger.debug("Initializing  options")
     options = dataclass_from_dict(Options, dict_options) if dict_options else Options()
 
+    maps.initial_oil_saturation = np.nan_to_num(maps.initial_oil_saturation, nan=0.0)
+    maps.initial_oil_saturation = np.where(np.isclose(maps.initial_oil_saturation, 0, atol=1e-2), 0,
+                                           maps.initial_oil_saturation)
+    logger.info(f"Min value <maps.initial_oil_saturation> before clearing: "
+                f"{maps.initial_oil_saturation[maps.initial_oil_saturation > 0].min()}")
+    maps.initial_oil_saturation = np.where(maps.initial_oil_saturation < relative_permeability.Sor * 0.9, 0,
+                                           maps.initial_oil_saturation)
+    logger.info(f"Cleared <maps.initial_oil_saturation> \n"
+                f"Min value <maps.initial_oil_saturation> after clearing:"
+                f" {maps.initial_oil_saturation[maps.initial_oil_saturation > 0].min()}")
+
     logger.info("Calculating current oil saturation <data_So_current>")
-    data_So_current = calculate_current_saturation(maps, data_wells, map_params, reservoir_params, fluid_params,
-                                                   relative_permeability, options)
+    data_So_current, data_wells = calculate_current_saturation(maps, data_wells, map_params, reservoir_params,
+                                                               fluid_params, relative_permeability, options)
     logger.info("Calculating current water cut <data_water_cut>")
     data_water_cut = calculate_water_cut(data_So_current, fluid_params, relative_permeability)
     logger.debug("Calculating oil initially in place <data_OIIP>")

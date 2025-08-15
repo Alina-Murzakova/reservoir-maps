@@ -55,13 +55,13 @@ def get_k_corey(F, m, Swc, Sor, Sw, type):
     Computes relative phase permeability for oil/water as functions of water saturation (Sw) based on the Corey model.
     """
     if Sw > (1 - Sor) and type == "water":
-        return 1
+        return F
     elif Sw > (1 - Sor) and type == "oil":
         return 0
     elif Sw <= Swc and type == "water":
         return 0
     elif Sw <= Swc and type == "oil":
-        return 1
+        return F
     else:
         try:
             Sd = (Sw - Swc) / (1 - Sor - Swc)  # Приведенная водонасыщенность пласта

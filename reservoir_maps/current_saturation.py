@@ -36,7 +36,8 @@ def calculate_current_saturation(maps: MapCollection,
         options: Additional calculation options
 
     Returns:
-        2D array of the current oil saturation distributed across the grid
+        data_So_current: 2D array of the current oil saturation distributed across the grid
+        data_wells: cleared data_wells without zero values in So_init and NNT
     """
     logger.debug("Accounting auto-fracs at injection wells")
     if map_params.switch_fracture:
@@ -54,8 +55,7 @@ def calculate_current_saturation(maps: MapCollection,
     # Filtration of wells without values on map_initial_oil_saturation
     data_wells = data_wells[data_wells['So_init'].notna()].reset_index(drop=True)
     data_wells = data_wells[(data_wells['NNT'] != 0.)].reset_index(drop=True)
-    maps.initial_oil_saturation = np.where(np.isclose(maps.initial_oil_saturation, 0, atol=1e-1), 0,
-                                           maps.initial_oil_saturation)
+
     # Граница по извлекаемости с учетом КИН
     So_min = maps.initial_oil_saturation * (1 - reservoir_params.KIN)
     # Расчет порового объема
@@ -113,7 +113,7 @@ def calculate_current_saturation(maps: MapCollection,
     end_time = time.time()
     elapsed_time = end_time - start_time
     logger.debug(f"Elapsed time of searching <optimal_gamma>: {elapsed_time}")
-    return data_So_current
+    return data_So_current, data_wells
 
 
 def interpolate_current_saturation(gamma: float,
@@ -319,12 +319,13 @@ def check_error_So(So_init_wells, So_current_wells, well_number):
 
     # Statistics
     count_error_points = np.sum(mask_So_error)
-    logger.info(f"Total number of well points where current S_oil > initial S_oil: {count_error_points}")
+
     if count_error_points > 0:
         mean_relative_error = np.mean(relative_tolerance[mask_So_error])
         mean_absolute_error = np.mean(absolute_tolerance[mask_So_error])
         wells_wrong_So_wells = len(np.unique(well_number[mask_So_error]))
         all_wells = len(np.unique(well_number))
+        logger.info(f"Total number of wells where current S_oil > initial S_oil: {wells_wrong_So_wells}")
         logger.info(f"Share of wells with at least one point where current S_oil > initial S_oil: "
                     f"{wells_wrong_So_wells / all_wells:.1%}")
         logger.info(f"Mean relative error of S_oil: {mean_relative_error:.1%}")
