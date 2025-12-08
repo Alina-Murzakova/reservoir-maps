@@ -51,7 +51,7 @@ def get_saturation_points(row, data_So_init, fluid_params, relative_permeability
         # Получаем нефтенасыщенность из карты
         So_init_point = data_So_init[y, x].astype('float32')
         if So_init_point == 0:
-            return None
+            return pd.Series([None, None])
 
         row_copy = row.copy()
         row_copy['So_init'] = So_init_point
