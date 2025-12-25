@@ -152,7 +152,7 @@ def check_memory(matrix_r_ij, max_memory_gb):
         Flag (bool) - Indicates whether sufficient memory is available to perform the full computation in a single step
         without splitting into batches.
     """
-    estimated_size_bytes = matrix_r_ij.shape[0] * matrix_r_ij.shape[1] * 4 * 2 * 0.8  # float32 * 2 массива
+    estimated_size_bytes = matrix_r_ij.shape[0] * matrix_r_ij.shape[1] * 4 * 2 * 0.7  # float32 * 2 arrays
     estimated_size_gb = estimated_size_bytes / (1024.0 ** 3)
     available_ram_gb = psutil.virtual_memory().available / (1024.0 ** 3)
     logger.info(f"Estimated memory required: ~{estimated_size_gb:.2f} GB, \n"

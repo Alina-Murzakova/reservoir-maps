@@ -2,11 +2,13 @@ import numpy as np
 import pandas as pd
 import logging
 import math
+import shutil
 
 from typing import Tuple, Optional
 from scipy.spatial.distance import cdist
 from scipy.optimize import minimize_scalar
 from tempfile import TemporaryDirectory
+from pathlib import Path
 from reservoir_maps.well_interference import get_matrix_r_ij
 from reservoir_maps.data_processing import (get_grid, generate_well_point_vectors, get_weights, get_saturation_points,
                                             check_memory, batch_generator, compute_exp_sum, save_batches_to_disk,
@@ -298,15 +300,37 @@ def optimize_gamma(data_So_init: np.ndarray,
         return optimal_gamma, data_So_current
 
     if enough_memory:
+        logger.info("Enough memory available, running optimization fully in RAM")
         return run_optimization()
-    else:
+
+    if options.tmp_dir is None:
         with TemporaryDirectory() as tmp_dir:
             # Saving temporary batches to temporary directory
+            logger.info(f"Using temporary directory for batches: {tmp_dir}")
             logger.info("Generating and saving batches with intermediate matrices used for weights_diff_saturation, "
                         "influence_matrix")
             save_batches_to_disk(batch_generator(valid_points, matrix_r_ij, diff_So, well_coord, r_eff, k, time_off,
                                                  options.delta, options.betta, options.batch_size), save_dir=tmp_dir)
             return run_optimization(tmp_dir)
+
+    else:
+        # Пользовательская директория
+        parent = Path(options.tmp_dir)
+        tmp_dir = parent / "tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        tmp_dir = str(tmp_dir)
+        logger.info(f"Using temporary directory for batches: {tmp_dir}")
+
+        try:
+            # Saving temporary batches to user directory
+            logger.info("Generating and saving batches with intermediate matrices used for weights_diff_saturation, "
+                        "influence_matrix")
+            save_batches_to_disk(batch_generator(valid_points, matrix_r_ij, diff_So, well_coord, r_eff, k, time_off,
+                                                 options.delta, options.betta, options.batch_size), save_dir=tmp_dir)
+            return run_optimization(tmp_dir)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            logger.info(f"Temporary directory {tmp_dir} removed")
 
 
 def check_error_So(So_init_wells, So_current_wells, well_number):

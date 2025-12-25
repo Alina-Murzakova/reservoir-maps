@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass, fields, MISSING
 from typing import Optional, Type, TypeVar, Any
 from .utils import get_line_cells
+from pathlib import Path
 
 T = TypeVar("T")
 logger = logging.getLogger(__name__)
@@ -246,15 +247,31 @@ class Options:
         max_distance (float): Maximum distance for the nearest surrounding (influencing) wells [m] (default: 1000)
         max_memory_gb (float):  Maximum allowed memory usage in gigabytes [GB] (default: 8.0)
         batch_size (int): Number of grid cells to process per batch (default: 50_000)
+        tmp_dir (Optional[str]): Parent directory for temporary calculation files
     """
     betta: float = 2.0
     delta: float = 0.0001
     max_distance: float = 1000
     max_memory_gb: float = 8.0
     batch_size: int = 50_000
+    tmp_dir: Optional[str] = None
 
     def __post_init__(self):
         validate_numbers(self)
+        self._validate_tmp_dir()
+
+    def _validate_tmp_dir(self):
+        if self.tmp_dir is None:
+            return
+
+        if not isinstance(self.tmp_dir, str):
+            raise TypeError("'tmp_dir' must be a string or None")
+
+        path = Path(self.tmp_dir)
+
+        # путь не должен указывать на файл
+        if path.exists() and not path.is_dir():
+            raise ValueError(f"'tmp_dir' must be a directory, got file: {path}")
 
 
 def validate_numbers(obj: Any) -> None:
@@ -262,6 +279,10 @@ def validate_numbers(obj: Any) -> None:
     Validates numeric and boolean attributes  of a dataclass-like object.
     """
     for name, value in vars(obj).items():
+        # Skip tmp_dir
+        if name == "tmp_dir":
+            continue
+
         if value is None:
             raise ValueError(f"'{name}' must not be None")
 
