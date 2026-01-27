@@ -25,12 +25,14 @@ class ResultMaps:
         data_OIIP (np.ndarray): Oil initially in place (OIIP)  map in t/ha (H, W)
         data_IRR (np.ndarray): Initial recoverable oil reserves map in t/ha (H, W)
         data_RRR (np.ndarray): Residual recoverable oil reserves map in t/ha (H, W)
+        rel_error_RRR (float): Relative error (%) between RRR and cumulative production
     """
     data_So_current: np.ndarray  # current oil saturation
     data_water_cut: np.ndarray  # current water cut
     data_OIIP: np.ndarray  # oil initially in place
     data_IRR: np.ndarray  # initial recoverable oil reserves
     data_RRR: np.ndarray  # residual recoverable oil reserves
+    rel_error_RRR: float  # relative error reserves
 
 
 def get_maps(dict_maps: dict,
@@ -99,9 +101,9 @@ def get_maps(dict_maps: dict,
     logger.debug("Calculating residual recoverable reserves <data_RRR>")
     data_RRR, sum_RRR = calculate_residual_recoverable_reserves(maps, data_So_current, data_OIIP, map_params,
                                                                 reservoir_params, fluid_params)
-    relative_error_reserves = (((sum_IRR - sum_RRR) - data_wells.Qo_cumsum.sum()) / data_wells.Qo_cumsum.sum() * 100)
-    logger.info(f"Relative error of reserves and production: {relative_error_reserves:.3f}%")
-    if abs(relative_error_reserves) > 1.0:
+    rel_error_RRR = (((sum_IRR - sum_RRR) - data_wells.Qo_cumsum.sum()) / data_wells.Qo_cumsum.sum() * 100)
+    logger.info(f"Relative error of reserves and production: {rel_error_RRR:.3f}%")
+    if abs(rel_error_RRR) > 1.0:
         warnings.simplefilter("always", UserWarning)
         warnings.warn("Relative error of reserves and production exceeds tolerable error (1%), check: \n"
                       "- relative phase permeability \n"
@@ -118,5 +120,6 @@ def get_maps(dict_maps: dict,
         data_water_cut,
         data_OIIP,
         data_IRR,
-        data_RRR
+        data_RRR,
+        rel_error_RRR
     )
