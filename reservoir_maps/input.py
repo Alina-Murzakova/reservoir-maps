@@ -147,11 +147,20 @@ class MapCollection:
 
     def _validate_numerical(self):
         for name, value in vars(self).items():
-            if isinstance(value, np.ndarray):
-                if not np.issubdtype(value.dtype, np.number):
-                    raise TypeError(f"Map '{name}' must be a numpy array, got {type(value)}")
-                if np.isnan(value).any():
-                    raise ValueError(f"Map '{name}' contains NaN")
+            if not isinstance(value, np.ndarray):
+                raise TypeError(f"Map '{name}' must be a numpy.ndarray")
+
+            if value.size == 0:
+                raise ValueError(f"Map '{name}' is empty")
+
+            if not np.issubdtype(value.dtype, np.number):
+                raise TypeError(f"Map '{name}' must contain numeric values, got dtype={value.dtype}")
+
+            if np.isnan(value).any():
+                raise ValueError(f"Map '{name}' contains NaN")
+
+            if np.isinf(value).any():
+                raise ValueError(f"Map '{name}' contains Inf")
 
 
 @dataclass
