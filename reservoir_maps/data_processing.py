@@ -53,7 +53,7 @@ def get_saturation_points(row, data_So_init, fluid_params, relative_permeability
         inside = (0 <= x < nx) and (0 <= y < ny)
         if not inside:
             raise ValueError(f"Trajectory point ({x}, {y}) outside So_init map.\n"
-                             f"Check well '{row['well_number']} or So_init map.")
+                             f"Check well <{row['well_number']}> or <So_init map>.")
 
         # Получаем нефтенасыщенность из карты
         So_init_point = data_So_init[y, x].astype('float32')
