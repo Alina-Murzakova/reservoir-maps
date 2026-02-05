@@ -46,8 +46,15 @@ def get_saturation_points(row, data_So_init, fluid_params, relative_permeability
     traj_y = row['trajectory_y']
     So_current_wells = []
     So_init_wells = []
+    ny, nx = data_So_init.shape
 
     for x, y in zip(traj_x, traj_y):
+        # Проверка скважины на размещение внутри карты
+        inside = (0 <= x < nx) and (0 <= y < ny)
+        if not inside:
+            raise ValueError(f"Trajectory point ({x}, {y}) outside So_init map.\n"
+                             f"Check well '{row['well_number']} or So_init map.")
+
         # Получаем нефтенасыщенность из карты
         So_init_point = data_So_init[y, x].astype('float32')
         if So_init_point == 0:

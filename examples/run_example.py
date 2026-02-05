@@ -50,7 +50,7 @@ maps = {
     "Residual recoverable oil reserves (RRR)": res.data_RRR
 }
 
-print(f"RRelative error of reserves and production: {res.rel_error_RRR:.3f}%")
+print(f"Relative error of reserves and production: {res.rel_error_RRR:.3f}%")
 
 for name, data in maps.items():
     data = np.where(data == 1.70141E+0038, 0.0, data)
