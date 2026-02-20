@@ -147,31 +147,6 @@ def get_weights(distances, r_eff, k, time_off, delta):
     return weights.astype('float32')
 
 
-def check_memory(matrix_r_ij, max_memory_gb):
-    """
-    Check whether sufficient memory is available to perform the full computation in a single step
-    without splitting into batches.
-    Args:
-        matrix_r_ij: local influence radius matrix r_ij for each point of well to getting shape
-        max_memory_gb: maximum allowed memory usage in gigabytes [GB]
-
-    Returns:
-        Flag (bool) - Indicates whether sufficient memory is available to perform the full computation in a single step
-        without splitting into batches.
-    """
-    estimated_size_bytes = matrix_r_ij.shape[0] * matrix_r_ij.shape[1] * 4 * 2 * 0.7  # float32 * 2 arrays
-    estimated_size_gb = estimated_size_bytes / (1024.0 ** 3)
-    available_ram_gb = psutil.virtual_memory().available / (1024.0 ** 3)
-    logger.info(f"Estimated memory required: ~{estimated_size_gb:.2f} GB, \n"
-                f"Available RAM: ~{available_ram_gb:.2f} GB (limit: {max_memory_gb} GB)")
-    if estimated_size_gb < min(available_ram_gb, max_memory_gb):
-        return True
-    else:
-        logger.info(f"Not enough memory available for fast computation.\n"
-                    f"Batch processing will be used.")
-        return False
-
-
 def batch_generator(valid_points, matrix_r_ij, diff_So, well_coord, r_eff, k, time_off,
                     delta, betta, batch_size):
     """
@@ -198,21 +173,24 @@ def batch_generator(valid_points, matrix_r_ij, diff_So, well_coord, r_eff, k, ti
     # Accounting for downtime and permeability
     psi = np.exp(-delta * k * time_off)
 
-    for i in range(0, valid_points.shape[0], batch_size):
-        sl = slice(i, i + batch_size)
+    n_points = valid_points.shape[0]
+    for i in range(0, n_points, batch_size):
+        sl = slice(i, min(i + batch_size, n_points))
         vp_batch = valid_points[sl]
 
-        # Calculating of distances from each cell to each well
         logger.debug("Calculating of distances from each cell to each well")
         distances = cdist(vp_batch, well_coord).astype('float32')
+
         logger.debug("Calculating of weights of wells's influence")
         weights = (r_eff * psi) / (distances ** 2 + 1e-12)
         weights /= (np.sum(weights, axis=1, keepdims=True) + 1e-12)  # weight normalization
         weights = weights.astype('float32')
 
         # Calculation of coefficients for accounting in exponential decay
-        weights_diff_saturation = (weights * diff_So)
-        influence_matrix = (((distances + matrix_r_ij[sl]) / r_eff) ** betta)
+        weights_diff_saturation = weights * diff_So
+        # matrix_r_ij может быть numpy array или memmap - срез работает одинаково!
+        matrix_batch = matrix_r_ij[sl, :]  # читает данные (из RAM или с диска)
+        influence_matrix = ((distances + matrix_batch) / r_eff) ** betta
 
         yield weights_diff_saturation, influence_matrix
 

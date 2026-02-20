@@ -1,5 +1,15 @@
 import numpy as np
+import time
+import gc
+import os
+import psutil
+import tempfile
+import numexpr as ne
 import math
+import logging
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 """
 -----Accounting for Influence Radii in Oil Saturation-----
@@ -63,6 +73,169 @@ def get_matrix_r_ij(valid_points, well_coord, x, y, work_markers, r_eff, h, Qo_c
             matrix_r_ij[:, index] = np.full(valid_points[:, 1].shape[0], r_eff_n / size_pixel)
             index += 1
     return matrix_r_ij
+
+
+def get_matrix_r_ij_memmap(valid_points, well_coord, x, y, work_markers, r_eff, h,
+                           Qo_cumsum, Winj_cumsum, size_pixel, max_distance,
+                           tmp_dir, ram_batch):
+    """
+    ВЕРСИЯ С MEMAPM - возвращает рабочий memmap объект
+
+    Args:
+        valid_points: Boolean mask array indicating valid cells with oil
+        well_coord: coordinates of wells [[x, y]...]
+        x, y: coordinates arrays
+        work_markers: work_markers of wells ['prod' or 'inj']
+        r_eff: effective radius of wells [m]
+        h: oil-saturated thickness of wells
+        Qo_cumsum: cumulative oil productions [t]
+        Winj_cumsum: cumulative fluid injection [m³]
+        size_pixel: size of one pixel [m]
+        max_distance: maximum distance for influencing wells [m]
+        tmp_dir: directory for temporary files
+        ram_batch: number of wells to keep in RAM buffer
+
+    Returns:
+        tuple: (memmap_object, file_path) - memmap для работы и путь к файлу
+    """
+
+    n_points = valid_points[:, 1].shape[0]
+    n_wells = len(x)
+
+    valid_x = valid_points[:, 0]
+    valid_y = valid_points[:, 1]
+
+    process = psutil.Process(os.getpid())
+
+    # Создаем временную директорию
+    os.makedirs(tmp_dir, exist_ok=True)
+
+    # ФИНАЛЬНЫЙ ФАЙЛ (сырые данные, которые будем использовать как memmap)
+    result_path = os.path.join(tmp_dir, 'matrix_r_ij_result.dat')
+
+    logger.info(f"Creating matrix_r_ij file: {result_path}")
+    logger.info(f"Dimensions: {n_points:,} x {n_wells}")
+    logger.info(f"RAM batch: {ram_batch} wells ({ram_batch * n_points * 4 / 1024 ** 3:.2f} GB)")
+
+    # Создаем memmap для финальных данных
+    final_matrix = np.memmap(result_path, dtype=np.float32, mode='w+',
+                             shape=(n_points, n_wells))
+
+    # Буфер в RAM
+    ram_buffer = np.zeros((n_points, ram_batch), dtype=np.float32)
+    wells_in_buffer = 0
+
+    # Прогрев numexpr
+    try:
+        ne.evaluate("1+1")
+    except:
+        logger.warning("numexpr not available, using standard numpy")
+        use_numexpr = False
+    else:
+        use_numexpr = True
+
+    start_time = time.time()
+
+    # Предварительный расчет масок
+    logger.info("Pre-calculating influencing well masks...")
+    mask_cache = []
+    for idx in range(n_wells):
+        if idx % 100 == 0 and idx > 0:
+            logger.info(f"  Mask progress: {idx}/{n_wells}")
+
+        x_point, y_point, marker = x[idx], y[idx], work_markers[idx]
+        if marker in ['prod', 'inj']:
+            interference, mask = calc_interference_matrix(
+                np.array([x_point, y_point]), marker,
+                well_coord, h, Winj_cumsum, Qo_cumsum,
+                work_markers, max_distance / size_pixel
+            )
+            mask_cache.append((interference, mask))
+        else:
+            mask_cache.append((None, None))
+
+    logger.info("Pre-calculation of masks completed")
+
+    # Основной цикл обработки скважин
+    for idx in range(n_wells):
+        # Прогресс каждые 50 скважин
+        if idx % 50 == 0 and idx > 0:
+            elapsed = time.time() - start_time
+            done = idx + 1
+            left = n_wells - done
+            eta = (elapsed / done) * left if done > 0 and elapsed > 0 else 0
+            mem = process.memory_info().rss / 1024 ** 2
+            logger.info(f"Well {done}/{n_wells} | "
+                        f"Time: {elapsed / 60:.1f}min | "
+                        f"ETA: {eta / 60:.1f}min | "
+                        f"Memory: {mem:.0f}MB")
+
+        x_point, y_point, marker, r_eff_n = x[idx], y[idx], work_markers[idx], r_eff[idx]
+        interference, mask = mask_cache[idx]
+
+        if marker in ['prod', 'inj'] and np.any(mask):
+            centers_x = x[mask]
+            centers_y = y[mask]
+
+            # Расчет корреляционной таблицы
+            angles, r_jl = calculate_r_jl_values(
+                (x_point, y_point), r_eff_n, interference,
+                centers_x, centers_y
+            )
+
+            # Вычисление углов
+            dx = valid_x - x_point
+            dy = valid_y - y_point
+
+            if use_numexpr:
+                all_alpha = ne.evaluate(
+                    "where(dy < 0, arctan2(dy, dx) + 6.283185307179586, arctan2(dy, dx))"
+                )
+            else:
+                all_alpha = np.arctan2(dy, dx)
+                all_alpha[all_alpha < 0] += 2 * np.pi
+
+            # Получение радиусов
+            result = get_r_jl(all_alpha, angles, r_jl)
+            col_data = result.astype(np.float32)
+
+            # Очистка
+            del centers_x, centers_y, angles, r_jl, dx, dy, all_alpha, result
+        else:
+            col_data = np.full(n_points, r_eff_n / size_pixel, dtype=np.float32)
+
+        # Сохраняем в буфер
+        ram_buffer[:, wells_in_buffer] = col_data
+        wells_in_buffer += 1
+
+        del col_data, interference, mask
+        gc.collect()
+
+        # Сброс буфера в файл
+        if wells_in_buffer >= ram_batch or idx == n_wells - 1:
+            start_idx = idx - wells_in_buffer + 1
+            final_matrix[:, start_idx:idx + 1] = ram_buffer[:, :wells_in_buffer]
+            final_matrix.flush()
+
+            wells_in_buffer = 0
+            gc.collect()
+
+    # Закрываем memmap (важно!)
+    del final_matrix
+    gc.collect()
+
+    total_time = time.time() - start_time
+    logger.info(f"Calculation completed in {total_time / 60:.2f} minutes")
+    logger.info(f"Average time per well: {total_time / n_wells:.2f} sec")
+    logger.info(f"File saved: {result_path}")
+    logger.info(f"File size: {os.path.getsize(result_path) / 1024 ** 3:.2f} GB")
+
+    # Открываем memmap для чтения
+    logger.info("Opening memmap matrix_r_ij for work...")
+    matrix_memmap = np.memmap(result_path, dtype=np.float32, mode='r',
+                              shape=(n_points, n_wells))
+
+    return matrix_memmap
 
 
 def calc_interference_matrix(point_coord, work_marker_point, grid_point_wells, array_h, array_Winj, array_Qo,
