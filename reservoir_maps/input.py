@@ -261,15 +261,16 @@ class Options:
     betta: float = 2.0
     delta: float = 0.0001
     max_distance: float = 1000
-    max_memory_gb: float = 8.0
     batch_size: int = 50_000
     tmp_dir: Optional[str] = None
+    max_memory_gb: Optional[float] = None
 
     def __post_init__(self):
+        self._validate_none_values()
         validate_numbers(self)
-        self._validate_tmp_dir()
 
-    def _validate_tmp_dir(self):
+    def _validate_none_values(self):
+
         if self.tmp_dir is None:
             return
 
@@ -282,6 +283,11 @@ class Options:
         if path.exists() and not path.is_dir():
             raise ValueError(f"'tmp_dir' must be a directory, got file: {path}")
 
+        if self.max_memory_gb is None:
+            return
+        else:
+            validate_numbers(self.max_memory_gb)
+
 
 def validate_numbers(obj: Any) -> None:
     """
@@ -290,6 +296,9 @@ def validate_numbers(obj: Any) -> None:
     for name, value in vars(obj).items():
         # Skip tmp_dir
         if name == "tmp_dir":
+            continue
+
+        if name == "max_memory_gb" and value is None:
             continue
 
         if value is None:
