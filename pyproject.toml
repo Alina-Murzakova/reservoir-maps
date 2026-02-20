@@ -12,7 +12,7 @@ authors = [
 description = "The module is for calculating reservoir state maps: current saturation, water cut, residual oil reserves."
 readme = "README.md"
 requires-python = ">=3.8, <3.13"
-license = { text = "MIT" }
+license = "MIT"
 keywords = ["current saturation", "current oil saturation", "water cut", "residual oil reserves", "residual recoverable reserves"]
 
 classifiers = [
@@ -21,7 +21,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Physics",
@@ -41,3 +40,6 @@ Repository = "https://github.com/Alina-Murzakova/reservoir_maps.git"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+[tool.setuptools]
+packages = ["reservoir_maps"]
