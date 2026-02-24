@@ -41,7 +41,6 @@ fluid_params = constants['fluid_params']
 relative_permeability = constants['relative_permeability']
 
 # Result
-
 start_time = time.time()
 res = get_maps(dict_maps, dict_data_wells, map_parameters, reservoir_params, fluid_params, relative_permeability)
 elapsed = time.time() - start_time

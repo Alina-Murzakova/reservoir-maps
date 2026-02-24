@@ -3,11 +3,13 @@ import pandas as pd
 import logging
 import math
 import tempfile
+import shutil
 
 from pathlib import Path
 from typing import Tuple, Optional
 from scipy.spatial.distance import cdist
 from scipy.optimize import minimize_scalar
+from contextlib import nullcontext
 from reservoir_maps.well_interference import get_matrix_r_ij, get_matrix_r_ij_memmap
 from reservoir_maps.data_processing import (get_grid, generate_well_point_vectors, get_weights, get_saturation_points,
                                             batch_generator, compute_exp_sum, save_batches_to_disk,
@@ -101,89 +103,84 @@ def calculate_current_saturation(maps: MapCollection,
         options.batch_size = min(options.batch_size, decision['batch_rows'])
 
     # СОЗДАЕМ ВРЕМЕННУЮ ДИРЕКТОРИЮ ТОЛЬКО ЕСЛИ ОНА НУЖНА
-    temp_dir_obj = None
+    temp_dir_obj = nullcontext()
     tmp_dir = None
 
     if decision['method'] != 'full':  # Директория нужна только для batch и memmap_batch
         if options.tmp_dir is None:
             # Создаем временную директорию
-            temp_dir_obj = tempfile.TemporaryDirectory()
+            temp_dir_obj = tempfile.TemporaryDirectory(prefix="resmaps_")
             tmp_dir = temp_dir_obj.name
             logger.info(f"Created temporary directory: {tmp_dir}")
         else:
             # Используем пользовательскую директорию
             parent = Path(options.tmp_dir)
-            tmp_dir_path = parent / "tmp"
+            tmp_dir_path = parent / f"resmaps_tmp"
             tmp_dir_path.mkdir(parents=True, exist_ok=True)
             tmp_dir = str(tmp_dir_path)
-            temp_dir_obj = None  # не нужно автоматически удалять
-            logger.info(f"Using user temporary directory: {tmp_dir}")
+            logger.info(f"Created user temporary directory: {tmp_dir}")
 
     enough_memory = False
     weights_diff_saturation = None
     influence_matrix = None
 
-    try:
-        if decision['method'] == 'full':
-            enough_memory = True
-            # Используем полную версию
-            logger.debug("Getting of matrix_r_ij")
-            matrix_r_ij = get_matrix_r_ij(valid_points, well_coord, x, y, work_markers, r_eff, h,
-                                          Qo_cumsum, Winj_cumsum, map_params.size_pixel, options.max_distance)
-            # Расстояние от всех ячеек до всех скважин
-            logger.debug("Calculating of distances from each cell to each well")
-            distances = cdist(valid_points, well_coord).astype('float32')
-            logger.debug("Calculating of weights of wells's influence")
-            weights = get_weights(distances, r_eff, k, time_off, options.delta)
+    with temp_dir_obj:
+        try:
+            print(tmp_dir)
+            if decision['method'] == 'full':
+                enough_memory = True
+                # Используем полную версию
+                logger.debug("Getting of matrix_r_ij")
+                matrix_r_ij = get_matrix_r_ij(valid_points, well_coord, x, y, work_markers, r_eff, h,
+                                              Qo_cumsum, Winj_cumsum, map_params.size_pixel, options.max_distance)
+                # Расстояние от всех ячеек до всех скважин
+                logger.debug("Calculating of distances from each cell to each well")
+                distances = cdist(valid_points, well_coord).astype('float32')
+                logger.debug("Calculating of weights of wells's influence")
+                weights = get_weights(distances, r_eff, k, time_off, options.delta)
 
-            weights_diff_saturation = weights * (So_init_wells - So_current_wells)
-            influence_matrix = ((distances + matrix_r_ij) / r_eff) ** options.betta
+                weights_diff_saturation = weights * (So_init_wells - So_current_wells)
+                influence_matrix = ((distances + matrix_r_ij) / r_eff) ** options.betta
 
-            # Для full режима передаем tmp_dir=None в optimize_gamma
-            opt_tmp_dir = None
+            elif decision['method'] == 'batch':
+                # Используем батчи для оптимизации
+                logger.debug("Getting of matrix_r_ij")
+                matrix_r_ij = get_matrix_r_ij(valid_points, well_coord, x, y, work_markers, r_eff, h,
+                                              Qo_cumsum, Winj_cumsum, map_params.size_pixel, options.max_distance)
 
-        elif decision['method'] == 'batch':
-            # Используем батчи для оптимизации
-            logger.debug("Getting of matrix_r_ij")
-            matrix_r_ij = get_matrix_r_ij(valid_points, well_coord, x, y, work_markers, r_eff, h,
-                                          Qo_cumsum, Winj_cumsum, map_params.size_pixel, options.max_distance)
-            opt_tmp_dir = tmp_dir  # передаем созданную директорию
+            else:  # memmap_batch
+                # Используем батчи для оптимизации и memmap файл
+                logger.debug("Getting of memmap matrix_r_ij")
+                matrix_r_ij = get_matrix_r_ij_memmap(valid_points, well_coord, x, y, work_markers,
+                                                     r_eff, h, Qo_cumsum, Winj_cumsum, map_params.size_pixel,
+                                                     options.max_distance, tmp_dir,
+                                                     ram_batch=decision['batch_wells'])
 
-        else:  # memmap_batch
-            # Используем батчи для оптимизации и memmap файл
-            logger.debug("Getting of memmap matrix_r_ij")
-            matrix_r_ij = get_matrix_r_ij_memmap(valid_points, well_coord, x, y, work_markers,
-                                                 r_eff, h, Qo_cumsum, Winj_cumsum, map_params.size_pixel,
-                                                 options.max_distance, tmp_dir,
-                                                 ram_batch=decision['batch_wells'])
-            opt_tmp_dir = tmp_dir  # передаем созданную директорию
+            logger.info("Searching <optimal_gamma> and getting map <So_current>")
+            import time
+            start_time = time.time()
+            optimal_gamma, data_So_current = optimize_gamma(maps.initial_oil_saturation, So_min, flat_So_init, mask,
+                                                            valid_points, weights_diff_saturation, influence_matrix,
+                                                            matrix_r_ij, data_volumes, Qo_sum_V, diff_So,
+                                                            well_coord, r_eff, k, time_off,
+                                                            relative_permeability, options, enough_memory,
+                                                            tmp_dir=tmp_dir
+                                                            )
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            logger.debug(f"Elapsed time of searching <optimal_gamma>: {elapsed_time}")
 
-        logger.info("Searching <optimal_gamma> and getting map <So_current>")
-        import time
-        start_time = time.time()
-        optimal_gamma, data_So_current = optimize_gamma(
-            maps.initial_oil_saturation, So_min, flat_So_init, mask,
-            valid_points, weights_diff_saturation, influence_matrix,
-            matrix_r_ij, data_volumes, Qo_sum_V, diff_So,
-            well_coord, r_eff, k, time_off,
-            relative_permeability, options, enough_memory,
-            tmp_dir=opt_tmp_dir  # передаем None для full режима
-        )
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        logger.debug(f"Elapsed time of searching <optimal_gamma>: {elapsed_time}")
+        finally:
+            # Закрываем memmap объект, если он был создан
+            if 'matrix_r_ij' in locals() and hasattr(matrix_r_ij, '_mmap'):
+                logger.debug("Closing memmap file...")
+                matrix_r_ij._mmap.close()
+                del matrix_r_ij
 
-    finally:
-        # Закрываем memmap объект, если он был создан
-        if 'matrix_r_ij' in locals() and hasattr(matrix_r_ij, '_mmap'):
-            logger.debug("Closing memmap file...")
-            matrix_r_ij._mmap.close()
-            del matrix_r_ij
-
-        # Очистка временной директории (только если мы ее создали)
-        if temp_dir_obj is not None:
-            temp_dir_obj.cleanup()
-            logger.info(f"Temporary directory {tmp_dir} removed")
+            # Очистка временной директории (только если мы ее создали)
+            if decision['method'] != 'full' and tmp_dir is not None:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                logger.info(f"Temporary directory {tmp_dir} removed")
 
     return data_So_current, data_wells
 
