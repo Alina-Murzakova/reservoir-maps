@@ -2,6 +2,7 @@ import pickle
 import json
 import numpy as np
 import os
+import time
 import matplotlib.pyplot as plt
 
 from calculation_parameters import constants
@@ -40,7 +41,11 @@ fluid_params = constants['fluid_params']
 relative_permeability = constants['relative_permeability']
 
 # Result
+
+start_time = time.time()
 res = get_maps(dict_maps, dict_data_wells, map_parameters, reservoir_params, fluid_params, relative_permeability)
+elapsed = time.time() - start_time
+print(f"Time: {elapsed / 60:.1f}min")
 
 maps = {
     "Current oil saturation": res.data_So_current,
