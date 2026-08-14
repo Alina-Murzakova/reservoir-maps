@@ -168,14 +168,18 @@ def check_memory(valid_points, n_wells, usable_memory_gb):
     # Размер одной скважины в GB
     well_size_gb = n_points * 4 / 1024 ** 3
 
-    # Размер массива для оптимизации в GB
-    optimization_size_gb = matrix_size_gb * 2  # float32 * 2 arrays
+    # Two persistent float32 optimization arrays.
+    optimization_size_gb = matrix_size_gb * 2
+    # Full mode also creates a float64 cdist result before converting it to float32.
+    # Four float32-equivalent matrices is a conservative lower estimate of peak RAM.
+    full_peak_size_gb = matrix_size_gb * 4
 
     # Размер одной строки при оптимизации (weights + influence)
     row_size_gb = n_wells * 4 * 2 / 1024 ** 3  # two float32 arrays
 
     logger.info(f"Estimated memory required for matrix_r_ij: ~{matrix_size_gb:.2f} GB, \n"
-                f"Estimated memory required for optimization: ~{optimization_size_gb:.2f} GB, \n"
+                f"Estimated persistent optimization arrays: ~{optimization_size_gb:.2f} GB, \n"
+                f"Estimated peak RAM for full mode: ~{full_peak_size_gb:.2f} GB, \n"
                 f"Limit RAM: ~{usable_memory_gb} GB")
 
     result = {
@@ -184,6 +188,7 @@ def check_memory(valid_points, n_wells, usable_memory_gb):
         'batch_rows': None,
         'matrix_size_gb': matrix_size_gb,
         'optimization_size_gb': optimization_size_gb,
+        'full_peak_size_gb': full_peak_size_gb,
         'usable_memory_gb': usable_memory_gb,
         'well_size_mb': well_size_gb * 1024,
         'n_points': n_points,
@@ -191,16 +196,16 @@ def check_memory(valid_points, n_wells, usable_memory_gb):
     }
 
     # Проверяем, хватит ли памяти для оптимизации
-    if optimization_size_gb <= usable_memory_gb:
+    if full_peak_size_gb <= usable_memory_gb:
         result['method'] = 'full'
-        result['message'] = f"Optimization array {optimization_size_gb:.2f} GB fits in memory"
+        result['message'] = f"Full-mode peak {full_peak_size_gb:.2f} GB fits in memory"
     else:
         logger.info(f"Not enough memory available for fast computation.\n"
                     f"Batch processing will be used.")
         result['method'] = 'batch'
         batch_rows = int(usable_memory_gb * 0.9 / row_size_gb)
         result['batch_rows'] = max(100, min(batch_rows, 50000, valid_points.shape[0]))
-        result['message'] = f"Optimization array {optimization_size_gb:.2f} GB does not fit in memory"
+        result['message'] = f"Full-mode peak {full_peak_size_gb:.2f} GB does not fit in memory"
         # Проверяем, помещается ли вся матрица в память
         if matrix_size_gb > usable_memory_gb:
             result['method'] = 'memmap_batch'

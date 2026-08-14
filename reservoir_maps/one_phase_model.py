@@ -43,11 +43,11 @@ def get_f_w(mu_w, mu_o, Bo, Bw, Sw, Fw, m1, Fo, m2, Swc, Sor):
     """
     k_rw = get_k_corey(Fw, m1, Swc, Sor, Sw, type="water")  # ОФП по воде
     k_ro = get_k_corey(Fo, m2, Swc, Sor, Sw, type="oil")  # ОФП по нефти
-    try:
-        f_w = 100 / (1 + (k_ro * mu_w * Bw) / (k_rw * mu_o * Bo))
-    except ZeroDivisionError:
-        f_w = 0
-    return f_w
+    if k_rw <= 0:
+        return 0.0
+    if k_ro <= 0:
+        return 100.0
+    return 100.0 / (1.0 + (k_ro * mu_w * Bw) / (k_rw * mu_o * Bo))
 
 
 def get_k_corey(F, m, Swc, Sor, Sw, type):

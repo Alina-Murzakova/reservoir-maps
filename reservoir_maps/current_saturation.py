@@ -6,17 +6,17 @@ import tempfile
 import shutil
 
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Any
 from scipy.spatial.distance import cdist
 from scipy.optimize import minimize_scalar
 from contextlib import nullcontext
 from reservoir_maps.well_interference import get_matrix_r_ij, get_matrix_r_ij_memmap
 from reservoir_maps.data_processing import (get_grid, generate_well_point_vectors, get_weights, get_saturation_points,
-                                            batch_generator, compute_exp_sum, save_batches_to_disk,
-                                            batch_generator_from_disk)
+                                            batch_generator, compute_exp_sum, batch_generator_from_disk)
 from reservoir_maps.memory import get_available_memory, check_memory
 from .input import (MapParams, ReservoirParams, FluidParams, RelativePermeabilityParams, Options, MapCollection)
 from .utils import update_injection_trajectory
+from .ofp_adaptation import calculate_weight_multipliers, adapt_local_relative_permeability
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ def calculate_current_saturation(maps: MapCollection,
                                  reservoir_params: ReservoirParams,
                                  fluid_params: FluidParams,
                                  relative_permeability: RelativePermeabilityParams,
-                                 options: Options) -> np.ndarray:
+                                 options: Options) -> tuple[Any, Any]:
     """
     Calculates the current oil saturation distribution across the grid (map).
     Args:
@@ -83,8 +83,29 @@ def calculate_current_saturation(maps: MapCollection,
     logger.debug("Calculating of total volume of oil production")
     Qo_sum_V = sum(Qo_cumsum) / fluid_params.pho_surf * fluid_params.Bo
 
+    logger.debug("Checking the current saturation in wells relative to the initial one")
     # Проверка текущей насыщенности в скважинах относительно начальной (проблемы с ОФП, So_init или с water_cut)
     check_error_So(So_init_wells, So_current_wells, well_number)
+    weight_multipliers, _ = calculate_weight_multipliers(
+        So_init_wells,
+        So_current_wells,
+        relative_permeability.Sor,
+        options.alpha_error_points,
+        options.min_weight_multiplier,
+    )
+    logger.debug("Local adaptation of the relative_permeability for individual wells")
+    So_current_wells, data_wells = adapt_local_relative_permeability(
+        data_wells,
+        So_init_wells,
+        So_current_wells,
+        work_markers,
+        well_number,
+        weight_multipliers,
+        fluid_params,
+        relative_permeability,
+        reservoir_params,
+        options,
+    )
     # Изменение нефтенасыщенности в точках скважин
     diff_So = (So_init_wells - So_current_wells)
 
@@ -106,7 +127,7 @@ def calculate_current_saturation(maps: MapCollection,
     temp_dir_obj = nullcontext()
     tmp_dir = None
 
-    if decision['method'] != 'full':  # Директория нужна только для batch и memmap_batch
+    if decision['method'] == 'memmap_batch':
         if options.tmp_dir is None:
             # Создаем временную директорию
             temp_dir_obj = tempfile.TemporaryDirectory(prefix="resmaps_")
@@ -126,7 +147,6 @@ def calculate_current_saturation(maps: MapCollection,
 
     with temp_dir_obj:
         try:
-            print(tmp_dir)
             if decision['method'] == 'full':
                 enough_memory = True
                 # Используем полную версию
@@ -137,7 +157,9 @@ def calculate_current_saturation(maps: MapCollection,
                 logger.debug("Calculating of distances from each cell to each well")
                 distances = cdist(valid_points, well_coord).astype('float32')
                 logger.debug("Calculating of weights of wells's influence")
-                weights = get_weights(distances, r_eff, k, time_off, options.delta)
+                weights = get_weights(
+                    distances, r_eff, k, time_off, options.delta, weight_multipliers
+                )
 
                 weights_diff_saturation = weights * (So_init_wells - So_current_wells)
                 influence_matrix = ((distances + matrix_r_ij) / r_eff) ** options.betta
@@ -162,6 +184,7 @@ def calculate_current_saturation(maps: MapCollection,
             optimal_gamma, data_So_current = optimize_gamma(maps.initial_oil_saturation, So_min, flat_So_init, mask,
                                                             valid_points, weights_diff_saturation, influence_matrix,
                                                             matrix_r_ij, data_volumes, Qo_sum_V, diff_So,
+                                                            weight_multipliers,
                                                             well_coord, r_eff, k, time_off,
                                                             relative_permeability, options, enough_memory,
                                                             tmp_dir=tmp_dir
@@ -178,10 +201,16 @@ def calculate_current_saturation(maps: MapCollection,
                 del matrix_r_ij
 
             # Очистка временной директории (только если мы ее создали)
-            if decision['method'] != 'full' and tmp_dir is not None:
+            if tmp_dir is not None:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
                 logger.info(f"Temporary directory {tmp_dir} removed")
 
+    edge_noise_points = int(np.count_nonzero(data_So_current > maps.initial_oil_saturation))
+    data_So_current = np.minimum(data_So_current, maps.initial_oil_saturation)
+    logger.info(
+        "Removed interpolation edge noise in %d cells; enforced So_current <= So_init",
+        edge_noise_points,
+    )
     return data_So_current, data_wells
 
 
@@ -193,6 +222,7 @@ def interpolate_current_saturation(gamma: float,
                                    relative_permeability: RelativePermeabilityParams,
                                    enough_memory: bool,
                                    tmp_dir: str,
+                                   batch_factory=None,
                                    ) -> np.ndarray:
     """
     Interpolation of the current oil saturation based on influence weights and wells interaction.
@@ -206,6 +236,7 @@ def interpolate_current_saturation(gamma: float,
         enough_memory: Indicates whether sufficient memory is available to perform the full computation in a single step
         without splitting into batches.
         tmp_dir: Temporary Directory for saving temporary batches
+        batch_factory: Optional callable returning a fresh batch generator for streaming calculations.
 
     Returns:
         np.ndarray: Flattened array of current oil saturation values.
@@ -215,7 +246,7 @@ def interpolate_current_saturation(gamma: float,
         # data_So_current[mask] -= np.sum(weights_diff_saturation * np.exp(-gamma * influence_matrix), axis=1)
         data_So_current[mask] -= compute_exp_sum(gamma, weights_diff_saturation, influence_matrix).astype('float32')
     else:
-        generator = batch_generator_from_disk(tmp_dir)
+        generator = batch_factory() if batch_factory is not None else batch_generator_from_disk(tmp_dir)
         data_So_current[mask] -= interpolate_saturation_changes_batched(gamma, generator).astype('float32')
     data_So_current[mask] = np.maximum(data_So_current[mask], relative_permeability.Sor)
     return data_So_current
@@ -253,11 +284,41 @@ def oil_production_loss(gamma: float,
                         relative_permeability: RelativePermeabilityParams,
                         enough_memory: bool,
                         tmp_dir: str,
+                        penalty_weight: float = 1e4,
+                        batch_factory=None,
                         ) -> float:
-    """Calculates the squared error loss between estimated oil production volume and actual oil production volume."""
+    """
+    Calculate normalized material-balance loss and the penalty for RRR exceeding IRR.
+
+    Args:
+        gamma: Optimization parameter controlling exponential influence decay.
+        data_So_init: Initial oil saturation map.
+        So_min: Minimum allowable oil saturation map.
+        flat_So_init: Flattened initial oil saturation map.
+        mask: Boolean mask of valid reservoir cells.
+        valid_points: Coordinates of valid reservoir cells.
+        weights_diff_saturation: Weighted saturation changes at well points.
+        influence_matrix: Exponential influence factors.
+        matrix_r_ij: Local well-interference radius matrix.
+        data_volumes: Reservoir pore-volume map.
+        Qo_sum_V: Historical cumulative production converted to reservoir volume.
+        diff_So: Saturation changes at well points.
+        well_coord: Coordinates of well trajectory points.
+        r_eff: Effective radii of well trajectory points.
+        k: Permeability values at well trajectory points.
+        time_off: Well inactivity time at trajectory points.
+        relative_permeability: Base relative-permeability parameters.
+        enough_memory: Whether full matrices are held in RAM.
+        tmp_dir: Directory containing cached batches when disk-backed calculation is used.
+        penalty_weight: Weight of the normalized RRR > IRR penalty.
+        batch_factory: Optional callable returning a fresh streaming batch generator.
+
+    Returns:
+        float: Sum of normalized material-balance loss and RRR/IRR penalty.
+    """
     data_So_current = (interpolate_current_saturation(gamma, flat_So_init, mask,
                                                       weights_diff_saturation, influence_matrix,
-                                                      relative_permeability, enough_memory, tmp_dir)
+                                                      relative_permeability, enough_memory, tmp_dir, batch_factory)
                        .reshape(data_So_init.shape))
     # Фактическая добыча из ячеек = (data_So_init - data_So_current) по объему породы
     oil_extracted = (data_So_init - data_So_current) * data_volumes
@@ -265,8 +326,20 @@ def oil_production_loss(gamma: float,
     mask_limit = (data_So_current < So_min)
     # В ячейках, где нарушено ограничение, считаем как будто добыли только до S_Hmin
     oil_extracted[mask_limit] = (data_So_init[mask_limit] - So_min[mask_limit]) * data_volumes[mask_limit]
-    logger.debug(f"Oil extracted according to the model: {np.sum(oil_extracted)}")
-    return (np.sum(oil_extracted) - Qo_sum_V) ** 2
+    calculated_production = np.sum(oil_extracted)
+    scale = max(abs(Qo_sum_V), 1e-12)
+    material_balance_loss = ((calculated_production - Qo_sum_V) / scale) ** 2
+
+    # RRR > IRR is equivalent to So_current > So_init for the reserve equations used here.
+    excess_saturation = np.maximum(data_So_current - data_So_init, 0.0)
+    excess_volume = np.sum(excess_saturation * data_volumes)
+    rrr_irr_penalty = (excess_volume / scale) ** 2
+    logger.debug(
+        "Oil extracted according to the model: %s; RRR/IRR excess pore volume: %s",
+        calculated_production,
+        excess_volume,
+    )
+    return material_balance_loss + penalty_weight * rrr_irr_penalty
 
 
 def intermediate_loss(gamma: float,
@@ -288,12 +361,42 @@ def intermediate_loss(gamma: float,
                       relative_permeability: RelativePermeabilityParams,
                       enough_memory: bool,
                       tmp_dir: str,
+                      penalty_weight: float = 1e4,
+                      batch_factory=None,
                       ) -> float:
-    """Wrapper for oil production loss that logs intermediate optimization results."""
+    """
+    Wrap oil_production_loss and log intermediate optimization results.
+
+    Args:
+        gamma: Optimization parameter controlling exponential influence decay.
+        data_So_init: Initial oil saturation map.
+        So_min: Minimum allowable oil saturation map.
+        flat_So_init: Flattened initial oil saturation map.
+        mask: Boolean mask of valid reservoir cells.
+        valid_points: Coordinates of valid reservoir cells.
+        weights_diff_saturation: Weighted saturation changes at well points.
+        influence_matrix: Exponential influence factors.
+        matrix_r_ij: Local well-interference radius matrix.
+        data_volumes: Reservoir pore-volume map.
+        Qo_sum_V: Historical cumulative production converted to reservoir volume.
+        diff_So: Saturation changes at well points.
+        well_coord: Coordinates of well trajectory points.
+        r_eff: Effective radii of well trajectory points.
+        k: Permeability values at well trajectory points.
+        time_off: Well inactivity time at trajectory points.
+        relative_permeability: Base relative-permeability parameters.
+        enough_memory: Whether full matrices are held in RAM.
+        tmp_dir: Directory containing cached batches when disk-backed calculation is used.
+        penalty_weight: Weight of the normalized RRR > IRR penalty.
+        batch_factory: Optional callable returning a fresh streaming batch generator.
+
+    Returns:
+        float: Loss value for the supplied gamma.
+    """
     loss = oil_production_loss(gamma, data_So_init, So_min, flat_So_init, mask, valid_points,
                                weights_diff_saturation, influence_matrix, matrix_r_ij, data_volumes, Qo_sum_V,
                                diff_So, well_coord, r_eff, k, time_off,
-                               relative_permeability, enough_memory, tmp_dir)
+                               relative_permeability, enough_memory, tmp_dir, penalty_weight, batch_factory)
 
     logger.debug(f"gamma={gamma:.4f}, loss={loss:.2e}")
     return loss
@@ -310,6 +413,7 @@ def optimize_gamma(data_So_init: np.ndarray,
                    data_volumes: np.ndarray,
                    Qo_sum_V: float,
                    diff_So: np.ndarray,
+                   weight_multipliers: np.ndarray,
                    well_coord: np.ndarray,
                    r_eff: np.ndarray,
                    k: np.ndarray,
@@ -333,6 +437,7 @@ def optimize_gamma(data_So_init: np.ndarray,
         data_volumes:  Pore volumes of reservoir cells.
         Qo_sum_V:  Total cumulative oil production volume.
         diff_So: Array of changes of oil saturation per well.
+        weight_multipliers: Point-wise influence multipliers for inconsistent well data.
         well_coord: Array of (x, y) pixel coordinates of wells.
         r_eff: Array of effective radii for each well.
         k: Array of permeability values for each well.
@@ -349,12 +454,13 @@ def optimize_gamma(data_So_init: np.ndarray,
             np.ndarray: Current oil saturation 2D array/grid.
     """
 
-    def run_optimization(tmp_dir: Optional[str] = None,
+    def run_optimization(tmp_dir: Optional[str] = None, batch_factory=None,
                          ) -> Tuple[float, np.ndarray]:
         res = minimize_scalar(lambda gamma: intermediate_loss(
             gamma, data_So_init, So_min, flat_So_init, mask, valid_points,
             weights_diff_saturation, influence_matrix, matrix_r_ij, data_volumes, Qo_sum_V,
-            diff_So, well_coord, r_eff, k, time_off, relative_permeability, enough_memory, tmp_dir),
+            diff_So, well_coord, r_eff, k, time_off, relative_permeability, enough_memory, tmp_dir,
+            options.rrr_irr_penalty_weight, batch_factory),
                               bounds=(0, 1), method='bounded')
         if not res.success:
             logger.warning(f"Gamma optimization did not converge: {res.message}")
@@ -362,7 +468,7 @@ def optimize_gamma(data_So_init: np.ndarray,
         logger.info(f"Optimal value of gamma: {optimal_gamma:.6f}")
         data_So_current = (interpolate_current_saturation(optimal_gamma, flat_So_init, mask,
                                                           weights_diff_saturation, influence_matrix,
-                                                          relative_permeability, enough_memory, tmp_dir)
+                                                          relative_permeability, enough_memory, tmp_dir, batch_factory)
                            .reshape(data_So_init.shape))
         logger.debug(
             f"Loss: {(np.sum((data_So_init - data_So_current) * data_volumes) - Qo_sum_V) ** 2}")
@@ -373,9 +479,23 @@ def optimize_gamma(data_So_init: np.ndarray,
         logger.info("Enough memory available, running optimization fully in RAM")
         return run_optimization()
 
-    save_batches_to_disk(batch_generator(valid_points, matrix_r_ij, diff_So, well_coord, r_eff, k, time_off,
-                                         options.delta, options.betta, options.batch_size), save_dir=tmp_dir)
-    return run_optimization(tmp_dir)
+    def make_batches():
+        return batch_generator(
+            valid_points,
+            matrix_r_ij,
+            diff_So,
+            well_coord,
+            r_eff,
+            k,
+            time_off,
+            options.delta,
+            options.betta,
+            options.batch_size,
+            weight_multipliers,
+        )
+
+    logger.info("Running batch optimization as a stream without saving intermediate matrices")
+    return run_optimization(tmp_dir, make_batches)
 
 
 def check_error_So(So_init_wells, So_current_wells, well_number):
