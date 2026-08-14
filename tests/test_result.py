@@ -35,6 +35,9 @@ def test_get_maps():
     assert result.data_So_current.shape == (10, 10)
     assert isinstance(result.data_water_cut, np.ndarray)
     assert result.data_So_current[result.data_So_current > 0.0].min() >= dict_relative_permeability['Sor']
+    valid = result.data_So_current != dict_map_params.get('no_data_value', 1.70141E+0038)
+    assert np.all(result.data_RRR[valid] <= result.data_IRR[valid])
+    assert hasattr(result, "adapted_relative_permeability")
 
 
 
