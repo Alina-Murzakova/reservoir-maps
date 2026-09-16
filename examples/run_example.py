@@ -1,9 +1,15 @@
 import pickle
 import json
 import numpy as np
-import os
 import time
 import matplotlib.pyplot as plt
+from pathlib import Path
+import sys
+
+EXAMPLE_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = EXAMPLE_DIR.parent
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
 
 from calculation_parameters import constants
 from reservoir_maps.result import get_maps
@@ -15,11 +21,11 @@ logging.basicConfig(
 
 
 # Loading dataframe with well data
-with open(f"data_wells.pkl", 'rb') as f:
+with (EXAMPLE_DIR / "data_wells.pkl").open('rb') as f:
     data_wells = pickle.load(f)
 
 # Loading metadata
-with open("maps_metadata.json", "r", encoding="utf-8") as f:
+with (EXAMPLE_DIR / "maps_metadata.json").open("r", encoding="utf-8") as f:
     maps_metadata = json.load(f)
 
 
@@ -30,7 +36,7 @@ dict_data_wells = {key: np.asarray(data_wells[key]) for key in keys_data_wells}
 # Preparing a dictionary with maps
 dict_maps = {}
 for meta in maps_metadata:
-    data = np.load(os.path.join(meta["data_file"]))
+    data = np.load(EXAMPLE_DIR / meta["data_file"])
     type_map = meta["type_map"]
     dict_maps[meta["type_map"]] = data
 
@@ -55,6 +61,8 @@ maps = {
 }
 
 print(f"Relative error of reserves and production: {res.rel_error_RRR:.3f}%")
+print("Adapted relative permeability by well:")
+print(res.adapted_relative_permeability)
 
 for name, data in maps.items():
     data = np.where(data == 1.70141E+0038, 0.0, data)
@@ -62,5 +70,5 @@ for name, data in maps.items():
     plt.imshow(data, origin="upper")
     plt.colorbar()
     plt.title(name)
-    plt.savefig(f"{name}.png", dpi=500)
+    plt.savefig(EXAMPLE_DIR / f"{name}.png", dpi=500)
     plt.close()

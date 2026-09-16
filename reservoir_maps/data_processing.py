@@ -127,7 +127,7 @@ def generate_well_point_vectors(data_wells, map_params, reservoir_params):
             So_init_wells, well_number)
 
 
-def get_weights(distances, r_eff, k, time_off, delta):
+def get_weights(distances, r_eff, k, time_off, delta, weight_multipliers=None):
     """
     Computes influence weights from wells on each cell of grid
     Args:
@@ -136,6 +136,8 @@ def get_weights(distances, r_eff, k, time_off, delta):
         k (np.ndarray): Reservoir permeability
         time_off (np.ndarray): Time since well was inactive
         delta (float): Coefficient controlling decay rate of well influence
+        weight_multipliers (Optional[np.ndarray]): Point-wise multipliers reducing the
+            influence of wells with inconsistent saturation data.
 
     Returns:
         np.ndarray: Normalized weights of influence.
@@ -143,12 +145,14 @@ def get_weights(distances, r_eff, k, time_off, delta):
     # Веса
     psi = np.exp(-delta * k * time_off)
     weights = r_eff * psi / (distances ** 2 + 1e-12)
+    if weight_multipliers is not None:
+        weights *= np.asarray(weight_multipliers)
     weights /= (np.sum(weights, axis=1, keepdims=True) + 1e-12)  # Нормировка веса
     return weights.astype('float32')
 
 
 def batch_generator(valid_points, matrix_r_ij, diff_So, well_coord, r_eff, k, time_off,
-                    delta, betta, batch_size):
+                    delta, betta, batch_size, weight_multipliers=None):
     """
     This generator function yields intermediate matrices used for weights_diff_saturation, influence_matrix
     Args:
@@ -162,6 +166,7 @@ def batch_generator(valid_points, matrix_r_ij, diff_So, well_coord, r_eff, k, ti
         delta: Coefficient controlling decay rate of well influence dependent on inactive time and permeability
         betta: Power coefficient for well interference influence
         batch_size: Number of grid cells to process per batch
+        weight_multipliers: Optional point-wise multipliers reducing inconsistent well influence.
 
     Returns:
         Tuple of:
@@ -183,6 +188,8 @@ def batch_generator(valid_points, matrix_r_ij, diff_So, well_coord, r_eff, k, ti
 
         logger.debug("Calculating of weights of wells's influence")
         weights = (r_eff * psi) / (distances ** 2 + 1e-12)
+        if weight_multipliers is not None:
+            weights *= np.asarray(weight_multipliers)
         weights /= (np.sum(weights, axis=1, keepdims=True) + 1e-12)  # weight normalization
         weights = weights.astype('float32')
 

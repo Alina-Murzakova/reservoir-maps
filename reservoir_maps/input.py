@@ -243,6 +243,10 @@ class RelativePermeabilityParams:
 
     def __post_init__(self):
         validate_numbers(self)
+        if self.Swc + self.Sor >= 1:
+            raise ValueError("'Swc + Sor' must be less than 1")
+        if self.Fw == 0 or self.Fo == 0:
+            raise ValueError("'Fw' and 'Fo' must be greater than 0")
 
 
 @dataclass
@@ -257,6 +261,17 @@ class Options:
         max_memory_gb (float):  Maximum allowed memory usage in gigabytes [GB] (default: 8.0)
         batch_size (int): Number of grid cells to process per batch (default: 50_000)
         tmp_dir (Optional[str]): Parent directory for temporary calculation files
+        alpha_error_points (float): Severity decay coefficient for inconsistent well points
+        min_weight_multiplier (float): Lower bound for an inconsistent point's weight multiplier
+        use_qo_eps_so (bool): Scale eps_so by cumulative production when True
+        eps_so_base (float): Base So reduction used when production scaling is disabled or too small
+        eps_so_min (float): Numerical tolerance used in physical bounds for target saturation
+        qo_norm_min (float): Lower bound for normalized cumulative oil production
+        min_Fw_multiplier (float): Lower multiplier allowed for the local water endpoint Fw
+        max_m1_multiplier (float): Upper multiplier allowed for the local water Corey exponent m1
+        min_m2_multiplier (float): Lower multiplier allowed for the local oil Corey exponent m2
+        rrr_irr_penalty_weight (float): Penalty weight for RRR > IRR during material-balance optimization
+        water_cut_smooth_power (float): Shape of the adapted water-cut correction inside r_eff
     """
     betta: float = 2.0
     delta: float = 0.0001
@@ -264,10 +279,25 @@ class Options:
     batch_size: int = 50_000
     tmp_dir: Optional[str] = None
     max_memory_gb: Optional[float] = None
+    alpha_error_points: float = 7.0
+    min_weight_multiplier: float = 0.2
+    use_qo_eps_so: bool = True
+    eps_so_base: float = 1e-4
+    eps_so_min: float = 1e-4
+    qo_norm_min: float = 0.05
+    min_Fw_multiplier: float = 0.02
+    max_m1_multiplier: float = 5.0
+    min_m2_multiplier: float = 0.2
+    rrr_irr_penalty_weight: float = 1e4
+    water_cut_smooth_power: float = 1.0
 
     def __post_init__(self):
         self._validate_none_values()
         validate_numbers(self)
+        for name in ("min_weight_multiplier", "qo_norm_min", "min_Fw_multiplier", "min_m2_multiplier"):
+            value = getattr(self, name)
+            if not 0 < value <= 1:
+                raise ValueError(f"'{name}' must be in the range (0, 1]")
 
     def _validate_none_values(self):
 
@@ -298,14 +328,14 @@ def validate_numbers(obj: Any) -> None:
         if name == "tmp_dir":
             continue
 
-        if name == "max_memory_gb" and value is None:
+        if name in {"max_memory_gb", "azimuth_sigma_h_min", "l_half_fracture"} and value is None:
             continue
 
         if value is None:
             raise ValueError(f"'{name}' must not be None")
 
         # Check for boolean type
-        if name == 'switch_fracture':
+        if name in {'switch_fracture', 'use_qo_eps_so'}:
             if not isinstance(value, bool):
                 raise TypeError(f"'{name}' must be True or False (type bool)")
             continue

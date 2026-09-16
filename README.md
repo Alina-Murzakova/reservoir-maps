@@ -62,7 +62,7 @@ A dictionary of wells data arrays.
 | `no_work_time` | int / float  | Time since well was inactive            |  months   |
 | `Qo_cumsum`    | int / float  | Cumulative oil production               |    ton    |
 | `Winj_cumsum`  | int / float  | Cumulative water injection              |    m³     |
-| `water_cut`    | int / float  | The latest water cut                    | fraction  |
+| `water_cut`    | int / float  | The latest water cut                    |     %     |
 | `r_eff`        | int / float  | Effective drainage radius               |     m     |
 | `NNT`          | int / float  | Net oil thickness                       |     m     |
 | `permeability` | int / float  | Reservoir permeability at well location |    mD     |
@@ -129,6 +129,17 @@ A dictionary of additional calculation options.
 | `max_distance`  | float | Maximum distance for the nearest surrounding wells |  1000   |
 | `max_memory_gb` | float | Maximum allowed memory usage in gigabytes          |   8.0   |
 | `batch_size`    | int   | Number of grid cells to process per batch          | 50_000  |
+| `alpha_error_points` | float | Decay coefficient for points where current saturation exceeds initial saturation | 7.0 |
+| `min_weight_multiplier` | float | Minimum influence multiplier for inconsistent well points | 0.2 |
+| `use_qo_eps_so` | bool | Scale local saturation tolerance `eps_so` by cumulative production | True |
+| `eps_so_base` | float | Base local saturation tolerance | 1e-4 |
+| `eps_so_min` | float | Numerical lower tolerance used in local adaptation | 1e-4 |
+| `qo_norm_min` | float | Minimum normalized cumulative production | 0.05 |
+| `min_Fw_multiplier` | float | Lower bound for local water endpoint multiplier | 0.02 |
+| `max_m1_multiplier` | float | Upper multiplier for local water Corey exponent | 5.0 |
+| `min_m2_multiplier` | float | Lower multiplier for local oil Corey exponent | 0.2 |
+| `rrr_irr_penalty_weight` | float | Material-balance penalty for `RRR > IRR` | 1e4 |
+| `water_cut_smooth_power` | float | Taper power for local water-cut correction | 1.0 |
 
 ### 💡 Example
 Here’s a minimal example of how to use `reservoir_maps`:
@@ -172,6 +183,7 @@ map_water_cut = result.data_water_cut  # water cut array
 map_OIIP = result.data_OIIP  # oil initially in place (OIIP) array
 map_IRR= result.data_IRR  # initial recoverable oil reserves (IRR) array
 map_RRR = result.data_RRR  # residual recoverable reserves (RRR) array
+adapted_rp = result.adapted_relative_permeability  # local Corey parameters by well
 ```
 
 👉 For full examples, check: 

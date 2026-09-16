@@ -52,7 +52,7 @@ def calculate_residual_recoverable_reserves(maps, data_So_current, data_OIIP, ma
     logger.info(f"Calculated remaining oil in place (ROIP): {sum_ROIP / 1000} thousand tons")
     # ОИЗ - residual recoverable reserves
     data_RRR = data_ROIP - data_OIIP * (1 - reservoir_params.KIN)
-    data_RRR[data_RRR < 0] = 0
+    data_RRR = np.clip(data_RRR, 0, data_OIIP * reservoir_params.KIN)
     sum_RRR = np.sum(data_RRR * map_params.size_pixel ** 2 / 10000)
     logger.info(f"Calculated remaining oil in place (RRR): {sum_RRR / 1000} thousand tons")
     return data_RRR, sum_RRR

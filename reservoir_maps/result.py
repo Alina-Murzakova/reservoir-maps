@@ -1,7 +1,8 @@
 import numpy as np
+import pandas as pd
 import logging
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 from .input import (MapParams, ReservoirParams, FluidParams, RelativePermeabilityParams, Options, MapCollection,
                     validate_and_prepare_data_wells, dataclass_from_dict)
@@ -26,6 +27,7 @@ class ResultMaps:
         data_IRR (np.ndarray): Initial recoverable oil reserves map in t/ha (H, W)
         data_RRR (np.ndarray): Residual recoverable oil reserves map in t/ha (H, W)
         rel_error_RRR (float): Relative error (%) between RRR and cumulative production
+        adapted_relative_permeability (pd.DataFrame): Locally adapted Corey parameters by well
     """
     data_So_current: np.ndarray  # current oil saturation
     data_water_cut: np.ndarray  # current water cut
@@ -33,6 +35,7 @@ class ResultMaps:
     data_IRR: np.ndarray  # initial recoverable oil reserves
     data_RRR: np.ndarray  # residual recoverable oil reserves
     rel_error_RRR: float  # relative error reserves
+    adapted_relative_permeability: pd.DataFrame = field(default_factory=pd.DataFrame)
 
 
 def get_maps(dict_maps: dict,
@@ -93,7 +96,18 @@ def get_maps(dict_maps: dict,
     data_So_current, data_wells = calculate_current_saturation(maps, data_wells, map_params, reservoir_params,
                                                                fluid_params, relative_permeability, options)
     logger.info("Calculating current water cut <data_water_cut>")
-    data_water_cut = calculate_water_cut(data_So_current, fluid_params, relative_permeability)
+    adapted_relative_permeability = data_wells.attrs.get(
+        "adapted_relative_permeability", pd.DataFrame()
+    ).copy()
+    data_water_cut = calculate_water_cut(
+        data_So_current,
+        fluid_params,
+        relative_permeability,
+        data_wells=data_wells,
+        map_params=map_params,
+        options=options,
+        initial_oil_saturation=maps.initial_oil_saturation,
+    )
     logger.debug("Calculating oil initially in place <data_OIIP>")
     data_OIIP, sum_OIIP = calculate_oil_initially_in_place(maps, map_params, fluid_params)
     logger.debug("Calculating initial recoverable reserves <data_IRR>")
@@ -116,10 +130,11 @@ def get_maps(dict_maps: dict,
     data_RRR = np.where(maps.initial_oil_saturation == 0, map_params.no_data_value, data_RRR)
 
     return ResultMaps(
-        data_So_current,
-        data_water_cut,
-        data_OIIP,
-        data_IRR,
-        data_RRR,
-        rel_error_RRR
+        data_So_current=data_So_current,
+        data_water_cut=data_water_cut,
+        data_OIIP=data_OIIP,
+        data_IRR=data_IRR,
+        data_RRR=data_RRR,
+        rel_error_RRR=rel_error_RRR,
+        adapted_relative_permeability=adapted_relative_permeability,
     )
