@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "reservoir-maps"
-version = "0.1.0"
+version = "0.2.0"
 authors = [
     { name = "Alina Murzakova", email = "alinagab1993@gmail.com" },
     { name = "Anastasia Rybakovskaya", email = "na.rybakovskaya@gmail.com" }
@@ -37,7 +37,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/Alina-Murzakova/reservoir_maps.git"
+Repository = "https://github.com/Alina-Murzakova/reservoir-maps.git"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
